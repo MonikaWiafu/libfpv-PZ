@@ -14,5 +14,7 @@ struct EmbeddedFile {
 
 extern const EmbeddedFile kEmbeddedPresets[];
 extern const size_t kEmbeddedPresetsCount;
+extern const EmbeddedFile kEmbeddedFonts[];
+extern const size_t kEmbeddedFontsCount;
 
 }  // namespace fpv

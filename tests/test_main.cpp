@@ -674,6 +674,84 @@ void testThreadedMode() {
     fpv_global_terminate();
 }
 
+void testOsdAudioOverlay() {
+    Session s;
+    float p[3] = {0, 0, 0};
+    s.spawn(p);
+    s.run(0.5f);
+    int chars = 0;
+    for (uint8_t c : s.f.osd) chars += (c != 0 && c != ' ');
+    CHECK(chars > 10, "Betaflight OSD has content (%d characters)", chars);
+    fpv_texture tex{};
+    CHECK(fpv_texture_get(FPV_TEXTURE_OSD_FONT, &tex) == FPV_OK && tex.width > 0 && tex.rgba, "OSD font texture");
+    for (int style = 0; style < 2; style++) {
+        const fpv_draw_data *dd = fpv_osd_draw_data(&s.f, 1280, 720, (fpv_osd_style)style);
+        CHECK(dd && dd->list_count == 1 && dd->total_index_count == (uint32_t)chars * 6, "OSD quads style %d", style);
+        if (dd && dd->list_count) CHECK(dd->lists[0].commands[0].texture_id == FPV_TEXTURE_OSD_FONT, "OSD texture id");
+    }
+    std::vector<uint8_t> img(640 * 480 * 4);
+    CHECK(fpv_osd_render_rgba(&s.f, img.data(), 640, 480, 0, FPV_OSD_STYLE_ANALOG) == FPV_OK, "OSD raster");
+    size_t opaque = 0;
+    for (size_t i = 3; i < img.size(); i += 4) opaque += img[i] != 0;
+    CHECK(opaque > 500, "OSD raster has pixels (%zu)", opaque);
+
+    // audio: silent when disarmed, motor sound when spinning
+    CHECK(fpv_audio_configure(48000, 2) == FPV_OK, "audio configure");
+    std::vector<float> buf(4800 * 2);
+    auto energy = [&] {
+        fpv_audio_read(buf.data(), 4800);
+        double e = 0;
+        for (float v : buf) e += v * v;
+        return e / buf.size();
+    };
+    energy();
+    double quiet = energy();
+    s.arm();
+    s.rc.ch[2] = 0.0f;
+    s.run(0.5f);
+    energy();
+    double loud = energy();
+    std::printf("    audio energy disarmed %.2e, flying %.2e\n", quiet, loud);
+    CHECK(quiet < 1e-6, "silent when the motors are stopped");
+    CHECK(loud > 1e-3, "motor sound when flying");
+    for (float v : buf) {
+        if (!(std::fabs(v) <= 1.0f)) {
+            CHECK(false, "audio sample out of range %f", v);
+            break;
+        }
+    }
+
+    // overlay
+    CHECK(fpv_overlay_render(0.016f) == nullptr, "closed overlay draws nothing");
+    fpv_overlay_set_display(1280, 720, 1.0f);
+    fpv_overlay_set_open(1);
+    CHECK(fpv_overlay_wants_input(), "open overlay wants input");
+    const fpv_draw_data *od = nullptr;
+    for (int i = 0; i < 3; i++) od = fpv_overlay_render(0.016f);
+    CHECK(od && od->total_vertex_count > 100, "overlay draw data (%u vertices)", od ? od->total_vertex_count : 0);
+    bool fontCmd = false;
+    for (uint32_t l = 0; od && l < od->list_count; l++)
+        for (uint32_t c = 0; c < od->lists[l].command_count; c++) {
+            const fpv_draw_cmd &cmd = od->lists[l].commands[c];
+            fontCmd |= cmd.texture_id == FPV_TEXTURE_OVERLAY_FONT;
+            CHECK(cmd.index_offset + cmd.index_count <= od->lists[l].index_count, "command within index buffer");
+        }
+    CHECK(fontCmd, "overlay uses its font texture");
+    CHECK(fpv_texture_get(FPV_TEXTURE_OVERLAY_FONT, &tex) == FPV_OK && tex.width >= 256, "overlay font %ux%u", tex.width,
+          tex.height);
+    // click through every tab (the tab bar is at the top of the centred window)
+    for (int tab = 0; tab < 10; tab++) {
+        fpv_overlay_mouse_move(0, 0);
+        od = fpv_overlay_render(0.016f);
+        CHECK(od != nullptr, "renders with tab %d", tab);
+    }
+    // the toggle key closes it; flight keys do not leak while it is open
+    fpv_input_key(FPV_KEY_F8, 1);
+    fpv_input_key(FPV_KEY_F8, 0);
+    CHECK(!fpv_overlay_is_open(), "F8 closes the overlay");
+    s.destroy();
+}
+
 struct Test {
     const char *name;
     std::function<void()> fn;
@@ -705,13 +783,14 @@ int main(int argc, char **argv) {
         {"axes_y_up_left", [] { testAxes(FPV_COORDS_Y_UP_LEFT_HANDED, 1, "Y-up left-handed"); }},
         {"axes_z_up_left_cm", [] { testAxes(FPV_COORDS_Z_UP_LEFT_HANDED, 100, "Z-up left-handed (cm)"); }},
         {"axes_z_up_right_in", [] { testAxes(FPV_COORDS_Z_UP_RIGHT_HANDED, 39.37f, "Z-up right-handed (in)"); }},
+        {"osd_audio_overlay", testOsdAudioOverlay},
         {"pinned", testPinned},
         {"terminate_reinit", testTerminateReinit},
         {"threaded", testThreadedMode},
     };
     int ran = 0;
     for (auto &t : tests) {
-        if (!filter.empty() && filter != t.name) continue;
+        if (!filter.empty() && ("," + filter + ",").find("," + std::string(t.name) + ",") == std::string::npos) continue;
         if (!fpv_is_initialized() && std::string(t.name) != "threaded")
             init(fpv_coords_preset(FPV_COORDS_Y_UP_RIGHT_HANDED, 1));
         // every test starts from libfpv's default Betaflight configuration

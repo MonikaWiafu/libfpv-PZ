@@ -87,6 +87,7 @@ private:
     };
 
     void buildShape();
+    void stopMotors();
     void syncPropDirection();
     void resolveContacts(float dt);
     void propStrikes(float dt);

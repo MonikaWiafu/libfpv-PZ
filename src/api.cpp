@@ -601,6 +601,8 @@ FPV_API fpv_result fpv_drone_create(const fpv_drone_desc *descIn, fpv_drone **ou
         L.flight.teleport(pos + rotate(rot, Vec3{0, L.flight.restHeight() + 0.002f, 0}), rot);
     });
     L.droneExists = true;
+    L.spawnPos = pos;
+    L.spawnRot = rot;
     L.drone.magic = 0xF9D0u;
     L.chaseValid = false;
     L.runner.heartbeat();

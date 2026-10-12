@@ -24,6 +24,9 @@ list(SORT LIBFPV_PRESET_FILES)
 set(LIBFPV_GEN_DIR ${CMAKE_BINARY_DIR}/generated)
 libfpv_embed_files(${LIBFPV_GEN_DIR}/embedded_presets.cpp kEmbeddedPresets
   ${PROJECT_SOURCE_DIR}/data/presets ${LIBFPV_PRESET_FILES})
+file(GLOB LIBFPV_FONT_FILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/data/fonts/*.mcm)
+libfpv_embed_files(${LIBFPV_GEN_DIR}/embedded_fonts.cpp kEmbeddedFonts
+  ${PROJECT_SOURCE_DIR}/data/fonts ${LIBFPV_FONT_FILES})
 
 # --- libfpv --------------------------------------------------------------------
 set(LIBFPV_SOURCES
@@ -40,7 +43,10 @@ set(LIBFPV_SOURCES
   src/util/log.cpp
   src/util/platform.cpp
   src/world/collision.cpp
+  src/osd/osd.cpp
+  src/audio/synth.cpp
   ${LIBFPV_GEN_DIR}/embedded_presets.cpp
+  ${LIBFPV_GEN_DIR}/embedded_fonts.cpp
 )
 
 add_library(fpv SHARED ${LIBFPV_SOURCES})
@@ -84,6 +90,17 @@ elseif(APPLE)
 elseif(WIN32)
   target_link_options(fpv PRIVATE -T${SIMITL_LINKER_SCRIPT} -static-libgcc -static-libstdc++ -static)
   target_link_libraries(fpv PRIVATE ws2_32 wsock32 winmm iphlpapi userenv)
+endif()
+
+if(LIBFPV_WITH_OVERLAY)
+  set(IMGUI_DIR ${PROJECT_SOURCE_DIR}/third_party/imgui)
+  target_sources(fpv PRIVATE
+    ${IMGUI_DIR}/imgui.cpp ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp ${IMGUI_DIR}/imgui_widgets.cpp
+    src/overlay/overlay.cpp src/overlay/bf_cache.cpp src/overlay/radio_wizard.cpp)
+  target_include_directories(fpv PRIVATE ${IMGUI_DIR})
+else()
+  target_sources(fpv PRIVATE src/overlay/overlay_stub.cpp)
 endif()
 
 if(LIBFPV_WITH_SDL)

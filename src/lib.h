@@ -53,6 +53,8 @@ struct Lib {
     Settings settings;
 
     fpv_drone drone{0};
+    Vec3 spawnPos;  // internal frame, for "Respawn"
+    Quat spawnRot;
     bool droneExists = false;
 
     fpv_raycast_fn raycast = nullptr;

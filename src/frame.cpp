@@ -11,6 +11,8 @@
 
 namespace fpv {
 
+void updatePresentation(const fpv_frame &f);  // api_present.cpp
+
 static void put3(float out[3], Vec3 v) {
     out[0] = v.x;
     out[1] = v.y;
@@ -225,6 +227,7 @@ extern "C" FPV_API fpv_result fpv_drone_tick(fpv_drone *d, float frameDt, fpv_fr
     f.osd_revision = cur.osdRevision;
     for (int i = 0; i < 8; i++) f.channels[i] = cur.channels[i];
 
+    updatePresentation(f);
     L.lastFrame = f;
     L.lastFrameValid = true;
     memcpy(frameOut, &f, std::min<size_t>(frameOut->struct_size, sizeof(f)));

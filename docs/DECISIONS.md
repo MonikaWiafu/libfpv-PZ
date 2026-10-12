@@ -209,3 +209,59 @@ plausibility ranges, not exact values.
 * Corpus: six real diffs from Betaflight 4.0.6 to 4.5.1
   (`tests/diffs/README.md`). Every one imports, arms and flies in the test
   suite.
+
+## Presentation
+
+### D14. Overlay: libfpv is a "legacy" ImGui backend
+
+Dear ImGui 1.92 supports dynamic font atlases (`RendererHasTextures`), but
+that would push texture create/update/destroy requests onto every host
+renderer. libfpv does not set the flag. It bakes ImGui's scalable default
+font once at 32 px into one RGBA atlas (`FPV_TEXTURE_OVERLAY_FONT`) and
+draws it at `16 px × ui_scale`. The host uploads at most two static
+textures (overlay font, OSD font) and draws plain indexed triangles, so its
+renderer snippet stays about 60 lines. The overlay draws its own mouse
+cursor (`io.MouseDrawCursor`), because games usually hide the OS cursor.
+No `imgui.ini` is written. ImGui is compiled inside libfpv with hidden
+symbols, so it cannot clash with a game's own ImGui.
+
+Overlay values for Betaflight settings are read and written with CLI
+`get`/`set` on the simulation thread (`BfSettingsCache`) and refreshed
+every second while the overlay is open. Configurator edits therefore show
+up, and overlay edits show up in the Configurator after its next read.
+Sliders write live and `save` on release.
+
+### D15. OSD
+
+Betaflight Configurator's MAX7456 fonts (`default.mcm` for the analog look,
+`bold.mcm` for the HD look) are embedded and parsed at runtime into one
+384×288 atlas. `fpv_osd_draw_data` returns quads in the same draw-data
+format as the overlay, so a host needs only one renderer.
+`fpv_osd_render_rgba` rasterises on the CPU for hosts that prefer a
+texture. SimITL's OSD canvas is the 30×16 analog grid. "HD look" uses the
+bold font in a 16:9 viewport; it does not add an HD (53×20) canvas.
+
+### D16. Audio
+
+`fpv_audio_read` is called from the host's audio thread. It never takes
+the API lock: parameters (RPM, load from current, prop damage, pan from
+motor position) are copied under a small mutex once per host frame and
+glided over 15 ms. Each motor mixes a band-limited blade-pass saw
+(harmonics above Nyquist dropped), the motor's electrical whine (7 pole
+pairs), RPM-tracking low-passed noise scaled by load, and a
+once-per-revolution wobble from prop damage. Betaflight's beeper is a
+2.7 kHz tone. The output is soft-clipped with `tanh`.
+
+### D17. Motor state is cleared on spawn and despawn
+
+SimITL's `Reset`/`Repair` commands keep the motor model (RPM, ESC filters,
+2 ms delay line). A drone deleted at hover throttle came back with
+spinning props, popped up 5 cm and tripped ANGLE (found by test ordering).
+`Flight::stopMotors` clears that state.
+
+### D18. Shipped presets use Betaflight's stock tune
+
+SimITL's per-quad `.bin` EEPROMs load fine (version 178), but differ from
+defaults only in `feature -GPS -TELEMETRY`: there are no modes and no
+tune. So libfpv ships no per-preset tune. The `<preset>.diff.txt`
+mechanism (D7) is there for preset authors.

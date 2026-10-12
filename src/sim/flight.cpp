@@ -105,9 +105,28 @@ void Flight::applyPreset(const DronePreset &preset) {
     m_input.vbat = preset.init.quadBatCellCount * 4.2f;
 }
 
+// Stops the propellers and clears the ESC models (filters, delay line).
+// SimITL's Reset/Repair commands keep them, so a drone deleted while flying
+// would otherwise respawn with spinning motors.
+void Flight::stopMotors() {
+    SimITL::SimState &ss = SimITL::Sim::getInstance().mSimState;
+    for (auto &m : ss.motorsState) {
+        m.rpm = 0;
+        m.pwm = 0;
+        m.thrust = 0;
+        m.current = 0;
+        m.mTorque = m.pTorque = m.netTorque = 0;
+        m.pwmLowPassFilter = SimITL::LowPassFilter{};
+        m.propWashLowPassFilter = SimITL::LowPassFilter{};
+        m.pwmHistory.clear();
+    }
+    ss.acceleration = {0, 0, 0};
+}
+
 void Flight::spawn(const DronePreset &preset, Vec3 pos, Quat rot, Vec3 pilotPos) {
     applyPreset(preset);
     repair();
+    stopMotors();
     m_active = true;
     m_pilotPos = pilotPos;
     teleport(pos, rot);
@@ -115,6 +134,7 @@ void Flight::spawn(const DronePreset &preset, Vec3 pos, Quat rot, Vec3 pilotPos)
 
 void Flight::despawn() {
     m_active = false;
+    stopMotors();
     teleport({0, 0, 0}, Quat{});
 }
 
