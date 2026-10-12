@@ -343,7 +343,7 @@ enum fpv_motor_flags {
 
 typedef struct fpv_motor_state {
     float rpm;
-    float thrust_newton;
+    float thrust_newton;     /* negative in turtle mode (props spin backwards) */
     float current_amp;
     float temperature_c;
     float command;           /* ESC command 0..1 */
@@ -372,6 +372,7 @@ enum fpv_drone_flags {
     FPV_DRONE_ON_GROUND = 1u << 5,
     FPV_DRONE_MODE_ANGLE = 1u << 6,
     FPV_DRONE_MODE_HORIZON = 1u << 7,
+    /* Armed in turtle (crash flip) mode: the props spin backwards. */
     FPV_DRONE_TURTLE = 1u << 8
 };
 

@@ -3,8 +3,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -25,7 +27,10 @@ struct ChannelBinding {
     float min = -1, center = 0, max = 1;  // calibrated raw endpoints
     // switches can also be bound to buttons: value = +1 while pressed
     int button = -1;
-    // multi-position switch on an axis: raw thresholds are just the axis
+    // AUX switches on an axis are positions: "on" at one raw value, "off" at
+    // rest. Several switches can share one multi-position switch.
+    float switchOn() const { return inverted ? min : max; }
+    float switchOff() const { return inverted ? max : min; }
 };
 
 struct DeviceMapping {
@@ -34,6 +39,22 @@ struct DeviceMapping {
     std::array<ChannelBinding, 8> channels{};
     bool complete = false;
 };
+
+// AUX channel `c` (bound to an axis) for the raw axis value: +1 when the
+// switch is nearer its "on" position than half the way to any other known
+// position of that axis (rest, or another switch's "on"), else -1.
+inline float switchPosition(const DeviceMapping &m, int c, float raw) {
+    const ChannelBinding &b = m.channels[c];
+    float on = b.switchOn();
+    float nearest = std::fabs(b.switchOff() - on);
+    for (int o = kAux1; o < 8; o++) {
+        const ChannelBinding &ob = m.channels[o];
+        if (o == c || ob.axis != b.axis) continue;
+        float d = std::fabs(ob.switchOn() - on);
+        if (d > 1e-3f) nearest = std::min(nearest, d);
+    }
+    return std::fabs(raw - on) < 0.5f * nearest ? 1.0f : -1.0f;
+}
 
 // Raw state of one connected device, produced by the backend.
 struct RawDevice {
@@ -122,7 +143,9 @@ private:
     // fallback state
     float m_kbThrottle = -1;
     bool m_kbArmed = false, m_kbArmKeyPrev = false;
+    bool m_kbTurtle = false, m_kbTurtleKeyPrev = false;
     bool m_padArmed = false, m_padArmPrev = false;
+    bool m_padTurtle = false, m_padTurtlePrev = false;
     float m_lastOut[8] = {0, 0, -1, 0, -1, -1, -1, -1};
 
     InputStatus m_status;

@@ -22,7 +22,8 @@ engine or mod loader.
 - **Collisions.** The game provides static meshes, moving objects or a
   raycast callback, and libfpv reports impacts and prop damage.
 - **Input.** Radios and gamepads are read through an embedded, hidden SDL3,
-  with a radio setup wizard. Keyboard and gamepad fallbacks are included.
+  with a radio setup wizard (arm, angle, beeper and turtle switches).
+  Keyboard and gamepad fallbacks are included.
 - **Presentation.** The OSD uses Betaflight's MAX7456 fonts (analog or HD
   look). A Dear ImGui overlay opens on F8, and synthesized motor sound comes
   through `fpv_audio_read`. Both the OSD and the overlay are returned as
@@ -103,7 +104,9 @@ cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug \
 | Esc | Quit |
 
 Without a radio, use the keyboard: Enter arms, W/S is throttle, A/D is yaw
-and the arrow keys pitch and roll (self-level). Settings, EEPROMs and the
+and the arrow keys pitch and roll (self-level). T toggles turtle mode: to
+flip a crashed drone back over, turn it on, arm, hold an arrow key until
+it lands upright, then turn turtle off to fly away. Settings, EEPROMs and the
 selected preset are stored in `./libfpv-data` (change it with
 `--data <dir>`).
 

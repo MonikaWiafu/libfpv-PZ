@@ -217,6 +217,100 @@ void testArmDisarm() {
     s.destroy();
 }
 
+// Upside down on the ground: it will not arm normally; in turtle mode
+// (AUX4) it arms, the props spin backwards and a roll stick flips it over.
+// libfpv's crashflip_rate cuts the power once it has turned over, so the
+// stick can simply be held. Every preset must make it.
+void testTurtle() {
+    Host h(fpv_coords_preset(FPV_COORDS_Y_UP_RIGHT_HANDED, 1));
+    loadWorld(makeLevel(h, 100, 0));
+    // body up, as a host vector, from the frame's quaternion
+    auto bodyUp = [&](const fpv_frame &f) {
+        float x = f.rotation[0], y = f.rotation[1], z = f.rotation[2], w = f.rotation[3];
+        float u[3] = {2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)};
+        return h.dir(u, h.U);
+    };
+    for (uint32_t i = 0; i < fpv_preset_count(); i++) {
+        const char *name = fpv_preset_name(i);
+        Session s;
+        fpv_drone_desc d;
+        fpv_drone_desc_defaults(&d);
+        h.pos(0, 0.1f, 0, d.position);
+        float flip[4] = {h.F[0], h.F[1], h.F[2], 0};  // 180 degrees about forward
+        std::memcpy(d.rotation, flip, sizeof(flip));
+        d.preset = name;
+        CHECK(fpv_drone_create(&d, &s.drone) == FPV_OK, "drone_create: %s", fpv_last_error());
+        s.run(1.0f);
+        CHECK(bodyUp(s.f) < -0.9f, "%s rests upside down, up %.2f", name, bodyUp(s.f));
+        s.arm();
+        CHECK(!s.armed(), "%s does not arm upside down without turtle", name);
+        CHECK(std::strstr(s.f.arming_disable_text, "ANGLE") != nullptr, "reports ANGLE: \"%s\"",
+              s.f.arming_disable_text);
+        s.rc.ch[4] = -1;
+        s.rc.ch[7] = 1;  // turtle switch
+        s.run(0.3f);
+        s.arm();
+        CHECK(s.armed(), "%s arms in turtle mode (%s)", name, s.f.arming_disable_text);
+        CHECK(s.f.flags & FPV_DRONE_TURTLE, "turtle flag set while armed");
+        s.rc.ch[0] = 0.6f;
+        float upright = -1, damage = 0;
+        s.run(1.5f, [&](float t) {
+            if (upright < 0 && bodyUp(s.f) > 0.9f) upright = t;
+        });
+        s.rc.ch[0] = 0;
+        s.run(0.5f);
+        for (auto &m : s.f.motors) damage = std::max(damage, m.prop_damage);
+        std::printf("    %s: upright after %.2f s, final up %.2f, prop damage %.2f\n", name, upright, bodyUp(s.f),
+                    damage);
+        CHECK(bodyUp(s.f) > 0.9f, "%s flipped back upright, up %.2f", name, bodyUp(s.f));
+        CHECK(damage < 0.3f, "%s props survive the flip, damage %.2f", name, damage);
+        // after a successful flip, turning turtle off re-arms in normal mode
+        // at once (Betaflight's quick restart): it can fly away
+        s.rc.ch[7] = -1;
+        s.run(0.3f);
+        CHECK(s.armed(), "%s armed again after turtle off (%s)", name, s.f.arming_disable_text);
+        CHECK(!(s.f.flags & FPV_DRONE_TURTLE), "turtle flag cleared");
+        s.rc.ch[2] = 0.3f;
+        s.run(1.0f);
+        CHECK(h.up(s.f.position) > 0.5f, "%s flies away, %.2f m", name, h.up(s.f.position));
+        s.destroy();
+    }
+}
+
+// An EEPROM from before turtle mode gets the AUX4 switch and the crash flip
+// cut-off once; after that the player's own edits stay.
+void testEepromUpgrade() {
+    namespace fs = std::filesystem;
+    auto cli = [](const char *cmd) {
+        char *o = nullptr;
+        fpv_cli_exec(cmd, &o);
+        std::string r = o ? o : "";
+        fpv_free(o);
+        return r;
+    };
+    auto activate = [](const char *preset) {
+        Session s;
+        float p[3] = {0, 0, 0};
+        s.spawn(p, preset);
+        s.run(0.05f);
+        s.destroy();
+    };
+    std::string first = fpv_preset_name(0), other = fpv_preset_name(1);
+    activate(first.c_str());
+    fs::path marker = fs::path(g_dataDir) / "eeprom";
+    for (auto &e : fs::directory_iterator(marker))
+        if (e.path().extension() == ".upgrade") fs::remove(e.path());
+    cli("aux 3 0 0 900 900 0 0\nset crashflip_rate = 0\nsave");  // an old EEPROM
+    activate(other.c_str());
+    activate(first.c_str());
+    CHECK(cli("aux").find("aux 3 35 3 1700 2100") != std::string::npos, "turtle switch added");
+    CHECK(cli("get crashflip_rate").find("crashflip_rate = 30") != std::string::npos, "crash flip cut-off set");
+    cli("aux 3 0 0 900 900 0 0\nsave");  // the player removes it again
+    activate(other.c_str());
+    activate(first.c_str());
+    CHECK(cli("aux").find("aux 3 35 3") == std::string::npos, "removed turtle switch stays removed");
+}
+
 void testSecondDroneRejected() {
     Session a;
     float p[3] = {0, 0, 0};
@@ -539,6 +633,11 @@ void testCli() {
     fpv_free(out);
     CHECK(fpv_cli_exec("get roll_rc_rate", &out) == FPV_OK, "get");
     CHECK(out && std::strstr(out, "123"), "value stored: %s", out ? out : "");
+    fpv_free(out);    CHECK(fpv_cli_exec("aux", &out) == FPV_OK, "aux");
+    CHECK(out && std::strstr(out, "aux 3 35 3 1700 2100"), "turtle on AUX4 by default: %s", out ? out : "");
+    fpv_free(out);
+    CHECK(fpv_cli_exec("get crashflip_rate", &out) == FPV_OK, "get crashflip_rate");
+    CHECK(out && std::strstr(out, "crashflip_rate = 30"), "turtle cut-off on by default: %s", out ? out : "");
     fpv_free(out);
 }
 
@@ -776,6 +875,8 @@ int main(int argc, char **argv) {
 
     std::vector<Test> tests = {
         {"arm_disarm", testArmDisarm},
+        {"turtle", testTurtle},
+        {"eeprom_upgrade", testEepromUpgrade},
         {"second_drone_rejected", testSecondDroneRejected},
         {"hover", testHover},
         {"punch_out", testPunchOut},

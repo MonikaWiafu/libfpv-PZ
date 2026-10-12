@@ -70,6 +70,9 @@ for v1.
   value 1 blends 75 %/50 %. libfpv resolves collisions with impulses and
   needs the result applied exactly, otherwise the drone sinks into the
   ground or tunnels.
+* `0004-reversed-motors.patch`: `StateInput::motorsReversed` spins the
+  props backwards for turtle mode (D21): thrust is negated and scaled by
+  0.5 (an inverted airfoil), and the reaction torque flips sign.
 
 ## Simulation
 
@@ -107,6 +110,11 @@ power-on grace (`BOOTGRACE`), and gyro calibration (`CALIB`) takes about
   than the array length (common in diffs from older firmware), this turns
   NULL into `(char *)1` and the next iteration reads address 1.
   Found by importing the 4.0.6 corpus diff under AddressSanitizer.
+* `0002-sitl-crash-flip.patch`: crash flip (turtle) mode is compiled only
+  with `USE_DSHOT`, which SITL builds leave out. The patch enables the
+  mode box, arming in crash flip and its beeper/disarm handling for SITL.
+  The motor reversal a DShot command would do is applied by the simulator
+  (D21).
 
 ### D7. One EEPROM per quad preset
 
@@ -139,6 +147,16 @@ on a single point and ground friction could not stop yaw spin (measured:
 12.8 rad/s forever). Propeller discs are not collided with; they are tested
 separately for prop strikes, which damage the props (`durability` from the
 prop JSON). `FPV_MATERIAL_KILLS_PROPS` destroys them on contact.
+
+A second sphere sits on top of each motor (bell and prop nut, 6 mm above
+the prop disc). Without them an upside-down drone balanced on the body
+sphere: it rocked until a prop tip touched the ground, so props spun up in
+turtle mode were destroyed by strikes, and a turtle flip pivoted on the
+centre and spun far too easily. Now it rests on the motor tops with props
+clear and pivots on an arm, like a real quad. Contacts on motor spheres
+never bounce (restitution 0): arms and props soak up the hit. With the
+material's restitution a quad landing on an arm after a flip cartwheeled
+on over it.
 
 ### D10. Warm-up, so a fresh drone can arm immediately
 
@@ -294,3 +312,39 @@ C++ alike inside the core.
 Betaflight's parameter groups register themselves in a linker section that
 no code references by name. `simitl_core` is therefore linked with
 `$<LINK_LIBRARY:WHOLE_ARCHIVE,...>`, so no PG can be dropped by the linker.
+
+## Modes
+
+### D21. Turtle mode (flip over after crash)
+
+Betaflight decides crash flip when arming with the FLIP OVER AFTER CRASH
+switch on, then reverses the motors with a DShot command. libfpv drives
+PWM (D5), so instead `bfb_crash_flip_active()` (armed and
+`isCrashFlipModeActive()`) feeds `StateInput::motorsReversed` every step.
+Betaflight's own crash flip mixer picks the motors from the sticks.
+Fresh EEPROMs get turtle on AUX4 (`aux 3 35 3 1700 2100 0 0`). The F8
+radio wizard's last switch step binds AUX4, the keyboard fallback toggles
+it with T and the gamepad fallback with Y / Triangle.
+`FPV_DRONE_TURTLE` is set while armed in turtle mode.
+
+AUX switches on an axis are positions, not ranges: a switch is on when the
+axis is closer to its "on" value than half the way to any other known
+position of that axis (rest, or another switch's "on"). So one 3-position
+switch can carry beeper in the middle and turtle at the top, and a mode
+mapped to the middle alone is off at the top. The wizard offers an axis
+already used by a switch again only in a position no switch uses yet.
+Saved mappings keep their format (on = `max`, or `min` when inverted).
+
+libfpv sets `crashflip_rate = 30`, the default of Betaflight's Race Pro
+builds (stock is 0). It cuts the turtle power as the quad spins faster
+and once it has turned about 90°, so holding the stick works and
+Betaflight can tell the flip succeeded; turning the switch off then
+re-arms in normal mode at once (quick restart). Measured with stock 0:
+releasing the stick at the right moment was needed, overflips were
+common and props were often destroyed. With 30, every shipped preset
+flips upright in about 0.5 s with 60 % stick held, with no prop damage.
+
+EEPROMs made before this get, once, the turtle switch on AUX4 (if there is
+no crash flip mode yet and AUX4 is free) and `crashflip_rate = 30` (if it
+is 0). A `<eeprom>.upgrade` file records that this ran, so later edits by
+the player stay.

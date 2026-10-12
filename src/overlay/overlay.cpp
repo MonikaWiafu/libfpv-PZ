@@ -256,7 +256,7 @@ void Overlay::notifyUnmappedRadio(const std::string &guid) {
 // --- tabs ------------------------------------------------------------------------
 
 void Overlay::channelBars(const float *ch) {
-    static const char *names[8] = {"Roll", "Pitch", "Throttle", "Yaw", "AUX1 arm", "AUX2", "AUX3", "AUX4"};
+    static const char *names[8] = {"Roll", "Pitch", "Throttle", "Yaw", "AUX1 arm", "AUX2 angle", "AUX3 beeper", "AUX4 turtle"};
     for (int i = 0; i < 8; i++) {
         char label[32];
         snprintf(label, sizeof label, "%d", (int)std::lround(1500 + ch[i] * 500));
@@ -741,11 +741,11 @@ void Overlay::tabControls() {
     ImGui::BulletText("W / S: throttle up / down");
     ImGui::BulletText("A / D: yaw");
     ImGui::BulletText("Arrow keys: pitch and roll (self-level mode)");
-    ImGui::BulletText("Enter: arm / disarm, B: beeper");
+    ImGui::BulletText("Enter: arm / disarm, B: beeper, T: turtle mode on / off");
     sectionTitle("Gamepad (degraded fallback)");
     ImGui::BulletText("Left stick up: throttle (centre = idle), left stick sideways: yaw");
     ImGui::BulletText("Right stick: pitch and roll (self-level mode)");
-    ImGui::BulletText("A / Cross: arm / disarm, B / Circle: beeper");
+    ImGui::BulletText("A / Cross: arm / disarm, B / Circle: beeper, Y / Triangle: turtle mode on / off");
     ImGui::TextWrapped("For real FPV flying use a radio in USB joystick mode: see the Radio tab.");
 }
 

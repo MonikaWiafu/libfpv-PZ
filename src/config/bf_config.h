@@ -16,6 +16,10 @@ std::string betaflightBaseDefaults();
 // The out-of-the-box tune for a fresh EEPROM: base defaults + modes on
 // AUX2-4 + a readable OSD layout.
 std::string betaflightFirstRunScript();
+// For EEPROMs made before turtle mode existed: given the CLI's `aux`
+// output, the `aux` line that puts turtle on AUX4, or "" when turtle is
+// configured already or AUX4 is used by another mode.
+std::string betaflightTurtleMigration(const std::string &auxDump);
 
 struct CliFilterResult {
     std::string script;                 // what to run

@@ -33,7 +33,7 @@ int RadioWizard::channelForStep(Step s) const {
     case Step::ArmSwitch: return kAux1;
     case Step::AngleSwitch: return kAux2;
     case Step::BeeperSwitch: return kAux3;
-    case Step::Aux4Switch: return kAux4;
+    case Step::TurtleSwitch: return kAux4;
     default: return -1;
     }
 }
@@ -44,6 +44,29 @@ bool RadioWizard::axisUsed(int axis) const {
     return false;
 }
 
+bool RadioWizard::stickAxisUsed(int axis) const {
+    for (int c = kRoll; c <= kYaw; c++)
+        if (m_mapping.channels[c].axis == axis) return true;
+    return false;
+}
+
+// A switch may share an axis with switches mapped earlier (a 3-position
+// switch: beeper in the middle, turtle at the top), but only in a position
+// none of them uses.
+bool RadioWizard::positionFree(int axis, float value) const {
+    for (int c = kAux1; c < 8; c++) {
+        const ChannelBinding &b = m_mapping.channels[c];
+        if (b.axis == axis && std::fabs(value - b.switchOn()) < kMoveThreshold) return false;
+    }
+    return true;
+}
+
+int RadioWizard::sharedWith(int axis) const {
+    for (int c = kAux1; c < 8; c++)
+        if (m_mapping.channels[c].axis == axis) return c;
+    return -1;
+}
+
 bool RadioWizard::buttonUsed(int button) const {
     for (auto &b : m_mapping.channels)
         if (b.button == button) return true;
@@ -51,12 +74,12 @@ bool RadioWizard::buttonUsed(int button) const {
 }
 
 // The axis (or button) that moved furthest from its rest position and is
-// not assigned yet.
+// not assigned yet. Switches may reuse a switch axis in a new position.
 void RadioWizard::detectAxis(const RawDevice &dev, bool allowButtons) {
     m_candidate = -1;
     float best = kMoveThreshold;
     for (size_t i = 0; i < dev.axes.size() && i < m_rest.size(); i++) {
-        if (axisUsed((int)i)) continue;
+        if (allowButtons ? (stickAxisUsed((int)i) || !positionFree((int)i, dev.axes[i])) : axisUsed((int)i)) continue;
         float d = std::fabs(dev.axes[i] - m_rest[i]);
         if (d > best) {
             best = d;
@@ -177,8 +200,8 @@ bool RadioWizard::next(std::string &hint) {
     case Step::Roll: m_step = Step::Calibrate; break;
     case Step::ArmSwitch: m_step = Step::AngleSwitch; break;
     case Step::AngleSwitch: m_step = Step::BeeperSwitch; break;
-    case Step::BeeperSwitch: m_step = Step::Aux4Switch; break;
-    case Step::Aux4Switch:
+    case Step::BeeperSwitch: m_step = Step::TurtleSwitch; break;
+    case Step::TurtleSwitch:
         m_step = Step::Done;
         m_mapping.complete = true;
         break;
@@ -191,7 +214,7 @@ void RadioWizard::skip() {
     if (!canSkip()) return;
     m_mapping.channels[channelForStep(m_step)] = ChannelBinding{};
     m_candidate = -1;
-    if (m_step == Step::Aux4Switch) {
+    if (m_step == Step::TurtleSwitch) {
         m_step = Step::Done;
         m_mapping.complete = true;
     } else {
@@ -220,7 +243,7 @@ const char *RadioWizard::title() const {
     case Step::ArmSwitch: return "Arm switch";
     case Step::AngleSwitch: return "Angle (self-level) switch";
     case Step::BeeperSwitch: return "Beeper switch";
-    case Step::Aux4Switch: return "Extra switch (AUX4)";
+    case Step::TurtleSwitch: return "Turtle (crash flip) switch";
     case Step::Done: return "All set";
     }
     return "";
@@ -242,8 +265,13 @@ const char *RadioWizard::instruction() const {
     case Step::ArmSwitch: return "Flip the switch you want to ARM with to its ARMED position.";
     case Step::AngleSwitch:
         return "Optional: flip a switch to the position that should turn on ANGLE (self-level) mode, or Skip.";
-    case Step::BeeperSwitch: return "Optional: flip a switch for the BEEPER (find a crashed drone by sound), or Skip.";
-    case Step::Aux4Switch: return "Optional: one more switch, sent as AUX4 (assign it in the Configurator), or Skip.";
+    case Step::BeeperSwitch:
+        return "Optional: flip a switch for the BEEPER (find a crashed drone by sound), or Skip. A 3-position switch "
+               "can carry two modes: use one position here and another one for the next switch.";
+    case Step::TurtleSwitch:
+        return "Optional: flip a switch to the position that should turn on TURTLE mode (flip over after crash), or "
+               "Skip. It can be another position of the beeper's switch. To use it upside down: switch on, arm, hold "
+               "the stick towards the side to roll over, then switch it off to fly away.";
     case Step::Done:
         return "Your radio is mapped. Check the bars below, then close this window and fly. Throttle down and flip "
                "the arm switch to arm.";
@@ -255,7 +283,13 @@ std::string RadioWizard::detectedLabel() const {
     if (m_candidate < 0) return "";
     if (m_candidate >= 1000) return "button " + std::to_string(m_candidate - 1000 + 1);
     float rest = m_rest[m_candidate];
-    return "axis " + std::to_string(m_candidate + 1) + (m_candidateValue > rest ? "" : ", reversed");
+    std::string label = "axis " + std::to_string(m_candidate + 1);
+    if (m_step >= Step::ArmSwitch) {
+        int other = sharedWith(m_candidate);
+        if (other >= 0) label += ", same switch as AUX" + std::to_string(other - kAux1 + 1) + " in another position";
+        return label;
+    }
+    return label + (m_candidateValue > rest ? "" : ", reversed");
 }
 
 float RadioWizard::progress() const { return (float)m_step / (float)Step::Done; }

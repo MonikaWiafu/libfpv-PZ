@@ -162,7 +162,7 @@ bool InputManager::mapRadio(const RawDevice &d, const DeviceMapping &m, float ou
         const ChannelBinding &b = m.channels[c];
         float v = (c == kThrottle || c >= kAux1) ? -1.0f : 0.0f;
         if (b.axis >= 0 && b.axis < (int)d.axes.size()) {
-            v = applyCalibration(b, d.axes[b.axis]);
+            v = c >= kAux1 ? switchPosition(m, c, d.axes[b.axis]) : applyCalibration(b, d.axes[b.axis]);
         } else if (b.button >= 0 && b.button < (int)d.buttons.size()) {
             bool pressed = d.buttons[b.button] != 0;
             v = (pressed != b.inverted) ? 1.0f : -1.0f;
@@ -178,7 +178,7 @@ static float deadband(float v, float db) {
 }
 
 // Gamepad (degraded): mode 2 sticks, throttle from the left stick where the
-// centre is idle, A toggles arm, ANGLE mode on (AUX2 high).
+// centre is idle, A toggles arm, Y toggles turtle, ANGLE mode on (AUX2 high).
 void InputManager::mapGamepad(const RawDevice &d, float dt, float out[8]) {
     (void)dt;
     const float db = 0.08f;
@@ -190,14 +190,17 @@ void InputManager::mapGamepad(const RawDevice &d, float dt, float out[8]) {
     bool armBtn = (d.padButtons & 1u) != 0;  // SDL_GAMEPAD_BUTTON_SOUTH
     if (armBtn && !m_padArmPrev) m_padArmed = !m_padArmed;
     m_padArmPrev = armBtn;
+    bool turtleBtn = (d.padButtons & 8u) != 0;  // SDL_GAMEPAD_BUTTON_NORTH
+    if (turtleBtn && !m_padTurtlePrev) m_padTurtle = !m_padTurtle;
+    m_padTurtlePrev = turtleBtn;
     out[kAux1] = m_padArmed ? 1.0f : -1.0f;
     out[kAux2] = 1.0f;
     out[kAux3] = (d.padButtons & 2u) ? 1.0f : -1.0f;  // EAST = beeper
-    out[kAux4] = -1.0f;
+    out[kAux4] = m_padTurtle ? 1.0f : -1.0f;
 }
 
 // Keyboard (degraded): W/S throttle, A/D yaw, arrows pitch/roll, Enter arms,
-// ANGLE mode on.
+// T toggles turtle, ANGLE mode on.
 void InputManager::mapKeyboard(float dt, float out[8]) {
     auto k = [&](int code) { return m_keys[code]; };
     float thrRate = 1.2f;
@@ -214,10 +217,13 @@ void InputManager::mapKeyboard(float dt, float out[8]) {
         if (m_kbArmed) m_kbThrottle = -1.0f;
     }
     m_kbArmKeyPrev = armKey;
+    bool turtleKey = k('T');
+    if (turtleKey && !m_kbTurtleKeyPrev) m_kbTurtle = !m_kbTurtle;
+    m_kbTurtleKeyPrev = turtleKey;
     out[kAux1] = m_kbArmed ? 1.0f : -1.0f;
     out[kAux2] = 1.0f;
     out[kAux3] = k('B') ? 1.0f : -1.0f;
-    out[kAux4] = -1.0f;
+    out[kAux4] = m_kbTurtle ? 1.0f : -1.0f;
 }
 
 void InputManager::update(double wallTime, float dt, float out[8], bool &radioLost) {

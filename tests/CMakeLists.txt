@@ -6,3 +6,9 @@ if(UNIX AND NOT APPLE)
 endif()
 add_test(NAME fpv_tests COMMAND fpv_tests WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 set_tests_properties(fpv_tests PROPERTIES TIMEOUT 900)
+
+# Radio wizard and switch mapping, without the library (pure logic).
+add_executable(fpv_wizard_tests test_wizard.cpp ${PROJECT_SOURCE_DIR}/src/overlay/radio_wizard.cpp)
+target_include_directories(fpv_wizard_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_features(fpv_wizard_tests PRIVATE cxx_std_17)
+add_test(NAME fpv_wizard_tests COMMAND fpv_wizard_tests)

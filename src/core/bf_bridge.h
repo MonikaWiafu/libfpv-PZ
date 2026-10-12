@@ -59,6 +59,8 @@ int bfb_reboot_required(void);
 int bfb_calibrating(void);
 /* Betaflight's "props out" setting; the simulated props follow it. */
 int bfb_yaw_motors_reversed(void);
+/* Armed in crash flip (turtle) mode: the motors spin backwards. */
+int bfb_crash_flip_active(void);
 /* Calibration, RX recovery or boot grace still pending. */
 int bfb_settling(void);
 

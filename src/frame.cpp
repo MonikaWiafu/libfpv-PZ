@@ -123,6 +123,7 @@ extern "C" FPV_API fpv_result fpv_drone_tick(fpv_drone *d, float frameDt, fpv_fr
     if (cur.onGround) flags |= FPV_DRONE_ON_GROUND;
     if (cur.modeAngle) flags |= FPV_DRONE_MODE_ANGLE;
     if (cur.modeHorizon) flags |= FPV_DRONE_MODE_HORIZON;
+    if (cur.turtle) flags |= FPV_DRONE_TURTLE;
     f.flags = flags;
     f.arming_disable_flags = cur.armingDisableFlags;
     std::string why;

@@ -39,7 +39,7 @@ struct FlightSnapshot {
     std::array<MotorSnapshot, 4> motors{};
     float batVoltage = 0, batVoltageSag = 0, batCurrent = 0, mahDrawn = 0;
     bool armed = false, failsafe = false, beeper = false, onGround = false, crashed = false;
-    bool modeAngle = false, modeHorizon = false;
+    bool modeAngle = false, modeHorizon = false, turtle = false;
     uint32_t armingDisableFlags = 0;
     float altitude = -1;
     float videoNoise = 0, videoBreakup = 0, videoSignal = 1;

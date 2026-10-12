@@ -1,0 +1,124 @@
+// libfpv - radio setup wizard unit test: drives the wizard with a fake radio
+// and checks the resulting switch mapping. No Betaflight, no SDL.
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+#include <cstdio>
+#include <string>
+
+#include "input/input.h"
+#include "overlay/radio_wizard.h"
+
+using namespace fpv;
+
+namespace {
+
+int g_failures = 0, g_checks = 0;
+
+#define CHECK(cond, ...)                                                    \
+    do {                                                                    \
+        g_checks++;                                                         \
+        if (!(cond)) {                                                      \
+            g_failures++;                                                   \
+            std::printf("  FAIL %s:%d: %s -- ", __FILE__, __LINE__, #cond); \
+            std::printf(__VA_ARGS__);                                       \
+            std::printf("\n");                                              \
+        }                                                                   \
+    } while (0)
+
+// Axes: 0 roll, 1 pitch, 2 throttle, 3 yaw, 4 arm (2-pos), 5 angle (2-pos),
+// 6 beeper + turtle (3-pos: -1 off, 0 beeper, +1 turtle).
+struct FakeRadio {
+    RawDevice d;
+    FakeRadio() {
+        d.guid = "fake";
+        d.name = "Fake radio";
+        d.axes = {0, 0, -1, 0, -1, -1, -1};
+    }
+};
+
+// Feeds the device to the wizard, then presses Next.
+bool step(RadioWizard &w, FakeRadio &r) {
+    w.update(r.d);
+    std::string hint;
+    bool ok = w.next(hint);
+    if (!ok) std::printf("    next refused at \"%s\": %s\n", w.title(), hint.c_str());
+    return ok;
+}
+
+void testSharedThreePositionSwitch() {
+    FakeRadio r;
+    RadioWizard w;
+    w.start(r.d);
+    CHECK(step(w, r), "rest");
+    r.d.axes[2] = 1;
+    CHECK(step(w, r), "throttle");
+    r.d.axes[2] = -1;
+    r.d.axes[3] = 1;
+    CHECK(step(w, r), "yaw");
+    r.d.axes[3] = 0;
+    r.d.axes[1] = 1;
+    CHECK(step(w, r), "pitch");
+    r.d.axes[1] = 0;
+    r.d.axes[0] = 1;
+    CHECK(step(w, r), "roll");
+    // calibration sweep
+    for (float v : {-1.0f, 1.0f, 0.0f}) {
+        for (int a = 0; a < 4; a++) r.d.axes[a] = v;
+        w.update(r.d);
+    }
+    r.d.axes[0] = r.d.axes[1] = r.d.axes[3] = 0;
+    r.d.axes[2] = -1;
+    CHECK(step(w, r), "calibrate");
+    r.d.axes[4] = 1;
+    CHECK(step(w, r), "arm");
+    r.d.axes[5] = 1;
+    CHECK(step(w, r), "angle");
+    r.d.axes[6] = 0;  // 3-pos switch to the middle: beeper
+    CHECK(step(w, r), "beeper");
+    // still in the middle: the wizard must not take the beeper position again
+    w.update(r.d);
+    CHECK(!w.detected(), "beeper's position is not offered for turtle");
+    r.d.axes[6] = 1;  // all the way up: turtle
+    w.update(r.d);
+    CHECK(w.detected(), "same switch in another position is detected");
+    std::printf("    turtle detected as: %s\n", w.detectedLabel().c_str());
+    CHECK(step(w, r), "turtle");
+    CHECK(w.step() == RadioWizard::Step::Done, "wizard done");
+
+    const DeviceMapping &m = w.mapping();
+    CHECK(m.channels[kAux3].axis == 6 && m.channels[kAux4].axis == 6, "beeper and turtle share axis 6: %d %d",
+          m.channels[kAux3].axis, m.channels[kAux4].axis);
+    struct {
+        float raw, beeper, turtle;
+    } cases[] = {{-1, -1, -1}, {0, 1, -1}, {1, -1, 1}, {-0.1f, 1, -1}, {0.9f, -1, 1}};
+    for (auto &c : cases) {
+        float b = switchPosition(m, kAux3, c.raw), t = switchPosition(m, kAux4, c.raw);
+        CHECK(b == c.beeper && t == c.turtle, "raw %.1f: beeper %.0f (want %.0f), turtle %.0f (want %.0f)", c.raw, b,
+              c.beeper, t, c.turtle);
+    }
+    // plain 2-position switches still work
+    CHECK(switchPosition(m, kAux1, 1) == 1 && switchPosition(m, kAux1, -1) == -1, "arm switch");
+    CHECK(switchPosition(m, kAux2, 0.8f) == 1 && switchPosition(m, kAux2, -0.8f) == -1, "angle switch");
+}
+
+// A middle-only mapping on a 3-position switch is off at the top.
+void testMiddleOnly() {
+    DeviceMapping m;
+    ChannelBinding &b = m.channels[kAux3];
+    b.axis = 6;
+    b.inverted = false;
+    b.min = -1;  // rest
+    b.max = 0;   // on
+    CHECK(switchPosition(m, kAux3, 0) == 1, "on in the middle");
+    CHECK(switchPosition(m, kAux3, 1) == -1, "off at the top");
+    CHECK(switchPosition(m, kAux3, -1) == -1, "off at rest");
+}
+
+}  // namespace
+
+int main() {
+    testSharedThreePositionSwitch();
+    testMiddleOnly();
+    std::printf("%d checks, %d failures\n", g_checks, g_failures);
+    return g_failures ? 1 : 0;
+}

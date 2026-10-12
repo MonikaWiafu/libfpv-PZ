@@ -1,0 +1,57 @@
+diff --git a/src/network/packets.h b/src/network/packets.h
+index 9ac0acb..e1914c4 100644
+--- a/src/network/packets.h
++++ b/src/network/packets.h
+@@ -132,6 +132,10 @@ struct StateInput{
+ 
+   // 1: bypass Betaflight PID and use motorPwm[] directly
+   uint8_t openLoop = 0;
++
++  // 1: motors spin backwards (Betaflight crash flip / turtle mode); the
++  // props push the other way and their reaction torque flips
++  uint8_t motorsReversed = 0;
+ };
+ 
+ //simulation output for game
+diff --git a/src/sim/physics.cpp b/src/sim/physics.cpp
+index 7d5e51d..9f897a3 100644
+--- a/src/sim/physics.cpp
++++ b/src/sim/physics.cpp
+@@ -10,6 +10,8 @@ namespace SimITL{
+   #endif
+ 
+   const auto AIR_RHO = 1.225f;
++  // thrust of a prop spun backwards relative to forwards (turtle mode)
++  const auto REVERSED_PROP_EFFICIENCY = 0.5f;
+ 
+   // -1.0 , 1.0
+   inline float randf(){
+@@ -621,6 +623,10 @@ float Physics::motorTorque(float volts, float rpm, float kV, float R, float I0)
+ 
+       float currentAbs = std::abs(current);
+       float thrust = propThrust(rpm, vel) * propHealthFactor * groundEffect * propwashEffect * propDamageEffect;
++      // a prop spun backwards pushes the other way, with a less efficient
++      // (inverted) airfoil
++      const float spinDir = state.motorsReversed ? -1.0f : 1.0f;
++      if (state.motorsReversed) thrust *= -REVERSED_PROP_EFFICIENCY;
+ 
+       // 1. HEAT GENERATION FIX
+       // Only ~35% of the system ESR (motorR) is inside the copper stator. 
+@@ -637,7 +643,7 @@ float Physics::motorTorque(float volts, float rpm, float kV, float R, float I0)
+       // Base cooling is 1.0x (sitting still on a desk). 
+       // Airspeed and propwash (thrust) dynamically scale up the heat dissipation.
+       float airspeedCooling = speed * 0.5f;
+-      float propwashCooling = thrust * 0.5f * (1.0f - state.propDamage[i]); // damage reduces cooling
++      float propwashCooling = std::abs(thrust) * 0.5f * (1.0f - state.propDamage[i]); // damage reduces cooling
+       float coolingMultiplier = 1.0f + airspeedCooling + propwashCooling;
+ 
+       // 3. HEAT DISSIPATED TO ENVIRONMENT
+@@ -658,7 +664,7 @@ float Physics::motorTorque(float volts, float rpm, float kV, float R, float I0)
+       motors[i].rpm = rpm;
+ 
+       // use motor direction of quad configuration
+-      resTorque += mSimState->stateInit.quadMotorDir[i] * mTorque;
++      resTorque += spinDir * mSimState->stateInit.quadMotorDir[i] * mTorque;
+ 
+       if(motors[i].temp > mSimState->stateInit.motorMaxT){
+         motors[i].status = motors[i].status | MotorStatus::MotorBurnedOut;

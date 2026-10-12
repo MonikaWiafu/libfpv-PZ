@@ -274,6 +274,12 @@ int bfb_yaw_motors_reversed(void)
     return mixerConfig()->yaw_motors_reversed ? 1 : 0;
 }
 
+int bfb_crash_flip_active(void)
+{
+    /* on a real quad, disarming sends the ESCs back to normal direction */
+    return ARMING_FLAG(ARMED) && isCrashFlipModeActive();
+}
+
 int bfb_calibrating(void)
 {
     return (getArmingDisableFlags() & ARMING_DISABLED_CALIBRATING) != 0;

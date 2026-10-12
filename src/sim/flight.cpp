@@ -17,6 +17,7 @@ namespace {
 constexpr float kImpactReportSpeed = 1.5f;   // m/s, below this a contact is not an "impact"
 constexpr float kRestingSpeed = 0.6f;        // m/s, no bounce below this
 constexpr float kPropDiscHalfThickness = 0.012f;
+constexpr float kPropNutHeight = 0.006f;     // motor top above the prop disc
 constexpr float kMaxSpeed = 120.0f;          // m/s, sanity clamp
 constexpr float kMaxAngularSpeed = 100.0f;   // rad/s, SimITL's own clamp
 
@@ -64,7 +65,10 @@ void Flight::syncPropDirection() {
 
 // Collision shape: a sphere at the centre of mass and one under each motor
 // bell. Their bottoms are level, so the drone rests on five points and
-// ground friction can stop it from spinning.
+// ground friction can stop it from spinning. One more sphere on top of each
+// motor (bell and prop nut, just above the prop disc): upside down the
+// drone rests on those with its props clear of the ground, and in turtle
+// mode it pivots on an arm like a real quad instead of rolling on the body.
 void Flight::buildShape() {
     m_shape.clear();
     const CollisionSettings &c = m_preset.collision;
@@ -73,6 +77,8 @@ void Flight::buildShape() {
         const Vec3F &p = m_preset.init.quadMotorPos[i];
         float y = -c.bodyRadius + c.motorRadius;
         m_shape.push_back({{p.x, std::min(p.y, y), p.z}, c.motorRadius, i});
+        float top = std::max(c.bodyRadius, p.y + kPropDiscHalfThickness + kPropNutHeight);
+        m_shape.push_back({{p.x, top - c.motorRadius, p.z}, c.motorRadius, i});
     }
     m_mass = std::max(0.01f, m_preset.init.quadMass);
     const Vec3F &ii = m_preset.init.quadInvInertia;
@@ -222,7 +228,8 @@ void Flight::resolveContacts(float dt) {
             Vec3 r = c.point - m_pos;
             Vec3 v = m_vel + cross(m_angVel, r) - c.surfaceVel;
             float vn = dot(v, c.normal);
-            float e = it.approach > kRestingSpeed ? mat.restitution : 0.0f;
+            // arms and props soak up hits on a motor: only the body bounces
+            float e = (it.approach > kRestingSpeed && it.motor < 0) ? mat.restitution : 0.0f;
             Vec3 rn = cross(r, c.normal);
             float kN = invM + dot(c.normal, cross(invI * rn, r));
             float target = it.approach > 0 ? e * it.approach : 0.0f;
@@ -347,6 +354,8 @@ void Flight::step(float dt, const float channels[8], bool radioLost) {
         m_angVel = {};
     }
     SimITL::BF::setRcFailsafe(radioLost && m_active);
+    // turtle mode: Betaflight picks it at arming, SimITL spins the props backwards
+    m_input.motorsReversed = bfb_crash_flip_active() ? 1 : 0;
 
     if ((m_videoTick & 63) == 0) syncPropDirection();  // follows Configurator edits
 
@@ -436,6 +445,7 @@ void Flight::step(float dt, const float channels[8], bool radioLost) {
     uint32_t modes = bfb_flight_mode_flags();
     m_snap.modeAngle = (modes & 1u) != 0;    // ANGLE_MODE
     m_snap.modeHorizon = (modes & 2u) != 0;  // HORIZON_MODE
+    m_snap.turtle = m_input.motorsReversed != 0;
     m_snap.onGround = m_active && m_lastGroundContact >= 0 && m_simTime - m_lastGroundContact < 0.05;
     m_snap.crashed = m_active && (anyBurned || anyBroken);
     if (std::memcmp(m_snap.osd.data(), out.osd, m_snap.osd.size()) != 0) {

@@ -23,7 +23,7 @@ public:
         ArmSwitch,
         AngleSwitch,
         BeeperSwitch,
-        Aux4Switch,
+        TurtleSwitch,
         Done
     };
 
@@ -42,7 +42,7 @@ public:
 
     const char *title() const;
     const char *instruction() const;
-    bool canSkip() const { return m_step >= Step::AngleSwitch && m_step <= Step::Aux4Switch; }
+    bool canSkip() const { return m_step >= Step::AngleSwitch && m_step <= Step::TurtleSwitch; }
     // Live detection feedback for the UI.
     bool detected() const { return m_candidate >= 0; }
     std::string detectedLabel() const;  // e.g. "stick 3, reversed"
@@ -57,6 +57,9 @@ private:
     };
     void detectAxis(const RawDevice &dev, bool allowButtons);
     bool axisUsed(int axis) const;
+    bool stickAxisUsed(int axis) const;
+    bool positionFree(int axis, float value) const;
+    int sharedWith(int axis) const;  // first AUX channel on this axis, or -1
     bool buttonUsed(int button) const;
     int channelForStep(Step s) const;
 

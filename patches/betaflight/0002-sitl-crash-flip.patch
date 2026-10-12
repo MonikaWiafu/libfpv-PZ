@@ -1,0 +1,38 @@
+diff --git a/src/main/fc/core.c b/src/main/fc/core.c
+index 91beddd07..73bc5c3cf 100644
+--- a/src/main/fc/core.c
++++ b/src/main/fc/core.c
+@@ -566,6 +566,10 @@ void tryArm(void)
+             setMotorSpinDirection(crashFlipModeActive ? DSHOT_CMD_SPIN_DIRECTION_REVERSED : DSHOT_CMD_SPIN_DIRECTION_NORMAL);
+         }
+ #endif // USE_DSHOT
++#if defined(SITL) && !defined(USE_DSHOT)
++        // the simulator reverses the motors itself (isCrashFlipModeActive())
++        crashFlipModeActive = IS_RC_MODE_ACTIVE(BOXCRASHFLIP);
++#endif
+ 
+ #ifdef USE_LAUNCH_CONTROL
+         if (!crashFlipModeActive && (canUseLaunchControl() || (tryingToArm == ARMING_DELAYED_LAUNCH_CONTROL))) {
+@@ -984,7 +988,7 @@ void processRxModes(timeUs_t currentTimeUs)
+ 
+     updateActivatedModes();
+ 
+-#ifdef USE_DSHOT
++#if defined(USE_DSHOT) || defined(SITL)
+     if (crashFlipModeActive) {
+         // Enable beep warning when the crashflip mode is active
+         beeper(BEEPER_CRASHFLIP_MODE);
+diff --git a/src/main/msp/msp_box.c b/src/main/msp/msp_box.c
+index e816db02d..9dce45971 100644
+--- a/src/main/msp/msp_box.c
++++ b/src/main/msp/msp_box.c
+@@ -289,6 +289,9 @@ void initActiveBoxIds(void)
+         BME(BOXCRASHFLIP);
+     }
+ #endif
++#if defined(SITL) && !defined(USE_DSHOT)
++    BME(BOXCRASHFLIP);  // the simulator reverses the motors itself
++#endif
+ 
+     if (featureIsEnabled(FEATURE_SERVO_TILT)) {
+         BME(BOXCAMSTAB);

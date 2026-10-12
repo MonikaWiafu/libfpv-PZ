@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 
@@ -119,6 +120,11 @@ int runCli(const std::string &script, std::string &output) {
     return rc;
 }
 
+// One-time upgrades of EEPROMs made by older libfpv versions are recorded
+// in a file next to the EEPROM, so a player's later edits are never undone.
+static const char kEepromUpgrade[] = "turtle-2";
+static fs::path upgradeMarker(const std::string &eeprom) { return pathFromUtf8(eeprom + ".upgrade"); }
+
 // libfpv's first-run configuration plus the preset's own tune, applied to
 // the active EEPROM. Runs on the simulation thread.
 static void applyFirstRunConfig(const DronePreset &p) {
@@ -132,6 +138,7 @@ static void applyFirstRunConfig(const DronePreset &p) {
     char *out = nullptr;
     bfb_cli_run(script.c_str(), &out);
     bfb_free(out);
+    writeFileAtomic(upgradeMarker(eepromPathFor(p)), kEepromUpgrade);
     FPV_LOGI("created Betaflight configuration for \"%s\" (%s)", p.name.c_str(), eepromPathFor(p).c_str());
 }
 
@@ -150,6 +157,24 @@ static void ensureEssentials() {
         bfb_cli_run("set motor_pwm_protocol = PWM\nsave noreboot", &o);
         bfb_free(o);
     }
+
+    // turtle mode (D21): the AUX4 switch and the crash flip cut-off
+    std::string done;
+    readTextFile(upgradeMarker(g_activeEeprom), done);
+    if (done == kEepromUpgrade) return;
+    bfb_cli_run("aux", &o);
+    std::string script = betaflightTurtleMigration(o ? o : "");
+    bfb_free(o);
+    bfb_cli_run("get crashflip_rate", &o);
+    const char *rate = o ? std::strstr(o, "crashflip_rate = ") : nullptr;
+    if (rate && std::atoi(rate + 17) == 0) script += "set crashflip_rate = 30\n";
+    bfb_free(o);
+    if (!script.empty()) {
+        FPV_LOGI("upgrading Betaflight configuration for turtle mode");
+        bfb_cli_run((script + "save noreboot").c_str(), &o);
+        bfb_free(o);
+    }
+    writeFileAtomic(upgradeMarker(g_activeEeprom), kEepromUpgrade);
 }
 
 // Activates the preset's EEPROM (one virtual flight controller per quad).
