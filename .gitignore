@@ -1,0 +1,6 @@
+build/
+/out/
+*.bin
+.vscode/
+.cache/
+__pycache__/

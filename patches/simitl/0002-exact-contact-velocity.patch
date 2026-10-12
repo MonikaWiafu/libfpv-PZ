@@ -1,0 +1,35 @@
+diff --git a/src/sim/physics.cpp b/src/sim/physics.cpp
+--- a/src/sim/physics.cpp
++++ b/src/sim/physics.cpp
+@@ -63,7 +63,8 @@
+     vec3 newAngularVelocity;
+     copy(newAngularVelocity, state.angularVelocity);
+     vec3 angularVelocityDiff = newAngularVelocity - currentAngularVelocity;
+-    float i_angular = (state.contact == 1) ? 0.5f : 0.0f;
++    // contact 1: blend towards the host velocities, contact 2: take them as-is
++    float i_angular = (state.contact == 2) ? 1.0f : ((state.contact == 1) ? 0.5f : 0.0f);
+     //linear interpolation, strength defined by diff between states
+     newAngularVelocity = currentAngularVelocity + angularVelocityDiff * i_angular;
+ 
+@@ -73,7 +74,7 @@
+     vec3 newLinearVelocity;
+     copy(newLinearVelocity, state.linearVelocity);
+     vec3 linearVelocityDiff = newLinearVelocity - currentLinearVelocity;
+-    float i_linear = (state.contact == 1) ? 0.75f : 0.0f;
++    float i_linear = (state.contact == 2) ? 1.0f : ((state.contact == 1) ? 0.75f : 0.0f);
+     //linear interpolation, strength defined by diff between states
+     newLinearVelocity = currentLinearVelocity + linearVelocityDiff * i_linear;
+ 
+diff --git a/src/network/packets.h b/src/network/packets.h
+--- a/src/network/packets.h
++++ b/src/network/packets.h
+@@ -126,7 +126,8 @@
+   // charged battery voltage
+   float vbat = 0.0f;
+ 
+-  // 1 true 0 false
++  // 0: no contact, 1: contact (velocities blended towards the ones above),
++  // 2: velocities above replace the simulated ones exactly (libfpv)
+   uint8_t contact = 0;
+ 
+   // 1: bypass Betaflight PID and use motorPwm[] directly

@@ -1,0 +1,392 @@
+diff --git a/extern/betaflightext/src/main/drivers/serial_ws.c b/extern/betaflightext/src/main/drivers/serial_ws.c
+index b143ead..afde2fd 100644
+--- a/extern/betaflightext/src/main/drivers/serial_ws.c
++++ b/extern/betaflightext/src/main/drivers/serial_ws.c
+@@ -22,11 +22,14 @@
+ #include <libwebsockets.h>
+ #endif
+ 
+-#define BASE_PORT 5760
++static int wsBasePort = 5760;
++#define BASE_PORT wsBasePort
+ 
+ static const struct serialPortVTable wsVTable;  // Forward
+ static wsPort_t wsSerialPorts[SERIAL_PORT_COUNT];
+ static bool wsPortInitialized[SERIAL_PORT_COUNT];
++// ports opened by betaflight, even if their context is currently stopped
++static bool wsPortOpened[SERIAL_PORT_COUNT];
+ 
+ //protocol definition
+ 
+@@ -183,8 +186,6 @@ static int callback_minimal(struct lws *wsi, enum lws_callback_reasons reason,vo
+     break;
+ 
+   case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
+-    fprintf(stderr, "LWS_CALLBACK_EVENT_WAIT_CANCELLED\n");
+-    return -1;
+     break;
+ 
+   default:
+@@ -247,7 +248,8 @@ static wsPort_t *wsReconfigure(wsPort_t *s, int id) {
+ 
+   s->context = context;
+ 
+-  wsPortInitialized[id] = true;
++  wsPortInitialized[id] = context != NULL;
++  wsPortOpened[id] = true;
+ 
+   return s;
+ }
+@@ -363,11 +365,11 @@ void wsWrite(serialPort_t *instance, uint8_t ch) {
+   }
+ }
+ 
+-void wsUpdate(){
++void wsUpdate(void){
+   for(int i = 0; i < SERIAL_PORT_COUNT; i++){
+     if(wsPortInitialized[i]){
+       wsPort_t* ws = &wsSerialPorts[i];
+-      int n = lws_service(ws->context, 1000);
++      int n = lws_service(ws->context, 50);
+       if(n<0){
+         fprintf(stderr,
+                 "timeout port %u for UART%u failed!!\n",
+@@ -389,7 +391,46 @@ void wsUpdate(){
+   }
+ }
+ 
+-void wsStop()
++void wsCancel(void)
++{
++  for (int i = 0; i < SERIAL_PORT_COUNT; i++) {
++    if (wsPortInitialized[i] && wsSerialPorts[i].context) {
++      lws_cancel_service(wsSerialPorts[i].context);
++    }
++  }
++}
++
++void wsRestart(void)
++{
++  for (int i = 0; i < SERIAL_PORT_COUNT; i++) {
++    if (wsPortOpened[i] && !wsPortInitialized[i]) {
++      wsReconfigure(&wsSerialPorts[i], i);
++    }
++  }
++}
++
++void wsSetBasePort(int basePort)
++{
++  wsBasePort = basePort;
++}
++
++int wsGetBasePort(void)
++{
++  return wsBasePort;
++}
++
++int wsGetClientCount(void)
++{
++  int count = 0;
++  for (int i = 0; i < SERIAL_PORT_COUNT; i++) {
++    if (wsPortInitialized[i] && wsSerialPorts[i].connected) {
++      count += wsSerialPorts[i].clientCount;
++    }
++  }
++  return count;
++}
++
++void wsStop(void)
+ {
+   for (int i = 0; i < SERIAL_PORT_COUNT; i++)
+   {
+@@ -401,6 +442,10 @@ void wsStop()
+       // lws_set_timeout(ws->wsi, NO_PENDING_TIMEOUT, LWS_TO_KILL_ASYNC);
+       // lws_cancel_service(ws->context);
+       lws_context_destroy(ws->context);
++      ws->context = NULL;
++      ws->wsi = NULL;
++      ws->connected = false;
++      ws->clientCount = 0;
+     }
+   }
+ }
+diff --git a/extern/betaflightext/src/main/drivers/serial_ws.h b/extern/betaflightext/src/main/drivers/serial_ws.h
+index a223526..ded0200 100644
+--- a/extern/betaflightext/src/main/drivers/serial_ws.h
++++ b/extern/betaflightext/src/main/drivers/serial_ws.h
+@@ -58,5 +58,15 @@ serialPort_t *serialWsOpen(serialPortIdentifier_e id,
+ void wsDataIn(wsPort_t *instance, uint8_t *ch, int size);
+ void wsDataOut(wsPort_t *instance);
+ 
+-void wsUpdate();
+-void wsStop();
++void wsUpdate(void);
++// wakes a wsUpdate() blocked in lws_service(), callable from any thread
++void wsCancel(void);
++// destroys all contexts; call only once the thread running wsUpdate() is joined
++void wsStop(void);
++// re-creates the contexts of ports closed by wsStop()
++void wsRestart(void);
++// port of UART1 is base + 1 (default base 5760 -> ws://localhost:5761)
++void wsSetBasePort(int basePort);
++int wsGetBasePort(void);
++// number of connected configurator clients over all ports
++int wsGetClientCount(void);
+diff --git a/extern/sitl.h b/extern/sitl.h
+index 681a34d..0468129 100644
+--- a/extern/sitl.h
++++ b/extern/sitl.h
+@@ -65,10 +65,13 @@ namespace SimITL{
+         return rcDataReceptionTimeUs;
+       }
+ 
++      // set when the radio link is lost, so Betaflight enters failsafe
++      static bool rcFrameFailsafe = false;
++
+       static uint8_t rxRcFrameStatus(BF::rxRuntimeState_t *rxRuntimeState)
+       {
+         UNUSED(rxRuntimeState);
+-        return BF::RX_FRAME_COMPLETE;
++        return rcFrameFailsafe ? BF::RX_FRAME_PENDING : BF::RX_FRAME_COMPLETE;
+       }
+ 
+       static void updateSerialWs(){
+@@ -88,4 +91,4 @@ namespace SimITL{
+     } // end extern "C"
+   }
+ }
+-#endif
+\ No newline at end of file
++#endif
+\ No newline at end of file
+diff --git a/src/main.cpp b/src/main.cpp
+index e7867fe..8cf3cc2 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -1,6 +1,6 @@
+ #include "sim/sim.h"
+ #include "network/packets.h"
+-#include <fmt/format.h>
++#include "util/simitl_log.h"
+ #include <stdlib.h>
+ #include <stdio.h>
+ 
+diff --git a/src/sim/bf.cpp b/src/sim/bf.cpp
+index f54b9d3..5a86e44 100644
+--- a/src/sim/bf.cpp
++++ b/src/sim/bf.cpp
+@@ -1,4 +1,4 @@
+-#include <fmt/format.h>
++#include "util/simitl_log.h"
+ #include "bf.h"
+ #include "sitl.h" // access to bf internals
+ #include <array>
+@@ -44,7 +44,7 @@ namespace SimITL{
+     }
+ 
+     void setEepromFileName(const char* filename){
+-      fmt::print("BF::setEepromFileName {}\n", filename);
++      simitl_log("BF::setEepromFileName {}\n", filename);
+       const size_t maxFileSize = 512;
+       EEPROM_FILENAME = new char[maxFileSize];
+       std::fill(EEPROM_FILENAME, EEPROM_FILENAME + maxFileSize, 0);
+@@ -172,9 +172,24 @@ namespace SimITL{
+       BF::updateSerialWs();
+     }
+ 
++    void cancelSerial()
++    {
++      BF::wsCancel();
++    }
++
+     void stopSerial()
+     {
+       BF::stopSerialWs();
+     }
++
++    void restartSerial()
++    {
++      BF::wsRestart();
++    }
++
++    void setRcFailsafe(bool failsafe)
++    {
++      BF::rcFrameFailsafe = failsafe;
++    }
+   } // namespace bf
+-} // namespace SimITL
+\ No newline at end of file
++} // namespace SimITL
+\ No newline at end of file
+diff --git a/src/sim/bf.h b/src/sim/bf.h
+index 034128b..f0c8aff 100644
+--- a/src/sim/bf.h
++++ b/src/sim/bf.h
+@@ -56,7 +56,14 @@ namespace SimITL{
+     void setDebugValue(uint8_t mode, uint8_t index, int16_t value);
+ 
+     void updateSerial();
++    void cancelSerial();
+     void stopSerial();
++    void restartSerial();
++
++    /**
++     * \brief Marks received RC frames as failsafe (radio lost) or complete.
++     */
++    void setRcFailsafe(bool failsafe);
+   }
+ }
+ 
+diff --git a/src/sim/physics.cpp b/src/sim/physics.cpp
+index 0b1721f..47d8452 100644
+--- a/src/sim/physics.cpp
++++ b/src/sim/physics.cpp
+@@ -1,5 +1,5 @@
+ #include "physics.h"
+-#include <fmt/format.h>
++#include "util/simitl_log.h"
+ #include "util/SimplexNoise.h"
+ #include "bf.h"
+ #include <cassert>
+@@ -25,7 +25,7 @@ namespace SimITL{
+   bool Physics::checkSimState(){
+     if(mSimState == nullptr){
+       if(s_update_err_cnt % 2000 == 0){
+-        fmt::print("Physics::update failed, no SimState set.\n");
++        simitl_log("Physics::update failed, no SimState set.\n");
+       }
+       s_update_err_cnt++;
+       return false;
+diff --git a/src/sim/sim.cpp b/src/sim/sim.cpp
+index d376f83..7818bb3 100644
+--- a/src/sim/sim.cpp
++++ b/src/sim/sim.cpp
+@@ -21,38 +21,37 @@ namespace SimITL{
+   }
+ 
+   Sim::~Sim() {
+-    running = false;          // signal the wsThread to exit                             
+-    //if(wsThread.joinable()) {                                                            
+-    //  wsThread.join();      // wait for it                                             
+-    //} 
++    // Runs at process exit (static singleton). Never join here: on Windows the
++    // thread has already been killed by ExitProcess and joining under the loader
++    // lock can deadlock. Detaching is enough to avoid std::terminate.
++    running = false;
++    if(wsThread.joinable()) {
++      wsThread.detach();
++    }
+   }
+ 
+   std::chrono::system_clock::time_point start;
+ 
+   void wsUpdateThread(Sim * sim){
+-    sim->wsThreadRunning = true;
+     while (sim->running) {
+       BF::updateSerial();
+       std::this_thread::sleep_for(std::chrono::milliseconds(10));
+     }
+     sim->wsThreadRunning = false;
+-    fmt::print("wsThread end!!\n");
++    simitl_log("wsThread end!!\n");
+   }
+ 
+   void Sim::init(const StateInit& stateInit) {
+     running = true;
+ 
+-    if(!wsThreadRunning){
+-      fmt::print("Starting ws update thread\n");
+-      wsThread = std::thread(wsUpdateThread, this);
+-    }
++    startServices();
+ 
+     mPhysics.initState(stateInit);
+     
+     //reset rc data to valid data...
+     BF::resetRcData();
+ 
+-    fmt::print("Initializing betaflight\n");
++    simitl_log("Initializing betaflight\n");
+     BF::setEepromFileName((const char *)stateInit.eepromName);
+     BF::init();
+ 
+@@ -119,17 +118,27 @@ namespace SimITL{
+     }
+   }
+ 
++  void Sim::startServices(){
++    running = true;
++    if(!wsThread.joinable()){
++      // re-creates the websocket contexts of ports closed by stop()
++      BF::restartSerial();
++      simitl_log("Starting ws update thread\n");
++      wsThreadRunning = true;
++      wsThread = std::thread(wsUpdateThread, this);
++    }
++  }
++
+   void Sim::stop(){
+-    // stopping the ws coms kind of corrupts managed memory of the engine under linux...
+-    /*
++    // The previous implementation destroyed the lws contexts while the ws
++    // thread was still inside lws_service(), which corrupted memory.
++    // Order: signal, wake lws_service(), join, then destroy contexts.
+     running = false;
+-
+-    BF::stopSerial();
+-
++    BF::cancelSerial();
+     if(wsThread.joinable()){
+       wsThread.join();
+     }
+-    */
++    BF::stopSerial();
+   }
+ 
+-}
+\ No newline at end of file
++}
+\ No newline at end of file
+diff --git a/src/sim/sim.h b/src/sim/sim.h
+index ce3cf0c..b2752bb 100644
+--- a/src/sim/sim.h
++++ b/src/sim/sim.h
+@@ -22,7 +22,7 @@
+ #include <mutex>
+ #include <queue>
+ 
+-#include <fmt/format.h>
++#include "util/simitl_log.h"
+ 
+ #include <chrono>
+ 
+@@ -67,6 +67,9 @@ namespace SimITL{
+     // executes a command
+     void command(const CommandType cmd);
+ 
++    // (re)starts the configurator websocket thread
++    void startServices();
++
+     //stop threads
+     void stop();
+ 
+diff --git a/src/util/simitl_log.h b/src/util/simitl_log.h
+new file mode 100644
+index 0000000..5af0461
+--- /dev/null
++++ b/src/util/simitl_log.h
+@@ -0,0 +1,14 @@
++#ifndef SIMITL_LOG_H
++#define SIMITL_LOG_H
++
++#include <fmt/format.h>
++
++extern "C" int libfpv_bf_printf(const char *fmt, ...);
++
++// Routes SimITL's console output to the embedding library's logger.
++template <typename... Args>
++inline void simitl_log(fmt::format_string<Args...> f, Args&&... args) {
++  libfpv_bf_printf("%s", fmt::format(f, std::forward<Args>(args)...).c_str());
++}
++
++#endif

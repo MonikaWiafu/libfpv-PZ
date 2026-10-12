@@ -1,0 +1,163 @@
+# Builds SimITL (Betaflight SITL + SimITL physics) as a static, position
+# independent library that libfpv links into its own shared library.
+#
+# This mirrors third_party/SimITL/extern/CMakeLists.txt and
+# third_party/SimITL/src/CMakeLists.txt, but points at the flattened
+# submodules in third_party/ (HTTPS, no nested SSH submodules) and never
+# builds SimITL's executables or its shared-memory client library.
+
+set(SIMITL_DIR      ${PROJECT_SOURCE_DIR}/third_party/SimITL)
+set(BF_DIR          ${PROJECT_SOURCE_DIR}/third_party/betaflight)
+set(BFEXT_DIR       ${SIMITL_DIR}/extern/betaflightext)
+set(LWS_DIR         ${PROJECT_SOURCE_DIR}/third_party/libwebsockets)
+set(FMT_DIR         ${PROJECT_SOURCE_DIR}/third_party/fmt)
+
+# --- Patch series ------------------------------------------------------------
+# Patches in patches/<name>/ are applied in order to the matching submodule,
+# idempotently (a patch that already reverse-applies is skipped).
+function(libfpv_apply_patches source_dir patch_dir)
+  file(GLOB _patches "${patch_dir}/*.patch")
+  list(SORT _patches)
+  foreach(_patch IN LISTS _patches)
+    execute_process(COMMAND git apply --reverse --check --whitespace=nowarn "${_patch}"
+      WORKING_DIRECTORY "${source_dir}" RESULT_VARIABLE _already OUTPUT_QUIET ERROR_QUIET)
+    if(NOT _already EQUAL 0)
+      execute_process(COMMAND git apply --whitespace=nowarn "${_patch}"
+        WORKING_DIRECTORY "${source_dir}" RESULT_VARIABLE _res ERROR_VARIABLE _err)
+      if(NOT _res EQUAL 0)
+        message(FATAL_ERROR "libfpv: failed to apply ${_patch}:\n${_err}")
+      endif()
+      message(STATUS "libfpv: applied ${_patch}")
+    endif()
+  endforeach()
+endfunction()
+libfpv_apply_patches(${SIMITL_DIR} ${PROJECT_SOURCE_DIR}/patches/simitl)
+libfpv_apply_patches(${BF_DIR} ${PROJECT_SOURCE_DIR}/patches/betaflight)
+
+# --- libwebsockets (static, no TLS, no test apps) ----------------------------
+set(LWS_WITH_MINIMAL_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LWS_WITHOUT_TESTAPPS ON CACHE BOOL "" FORCE)
+set(LWS_WITHOUT_TEST_SERVER ON CACHE BOOL "" FORCE)
+set(LWS_WITHOUT_TEST_SERVER_EXTPOLL ON CACHE BOOL "" FORCE)
+set(LWS_WITHOUT_TEST_PING ON CACHE BOOL "" FORCE)
+set(LWS_WITHOUT_TEST_CLIENT ON CACHE BOOL "" FORCE)
+set(LWS_WITH_SSL OFF CACHE BOOL "" FORCE)
+set(LWS_WITH_SHARED OFF CACHE BOOL "" FORCE)
+set(LWS_WITH_STATIC ON CACHE BOOL "" FORCE)
+set(LWS_WITH_EXPORT_LWSTARGETS OFF CACHE BOOL "" FORCE)
+set(DISABLE_WERROR ON CACHE BOOL "" FORCE)
+add_subdirectory(${LWS_DIR} ${CMAKE_BINARY_DIR}/third_party/libwebsockets EXCLUDE_FROM_ALL)
+set_property(TARGET websockets PROPERTY POSITION_INDEPENDENT_CODE ON)
+set_property(TARGET websockets PROPERTY C_VISIBILITY_PRESET hidden)
+
+# --- Betaflight + SimITL extensions ------------------------------------------
+set(BF_MAIN_SOURCES
+  build/build_config.c build/debug.c build/version.c
+  common/maths.c common/streambuf.c common/crc.c common/filter.c
+  common/sensor_alignment.c common/bitarray.c common/printf.c
+  common/printf_serial.c common/time.c common/typeconversion.c
+  common/encoding.c common/vector.c common/gps_conversion.c
+  config/config.c config/feature.c config/config_streamer.c
+  config/config_eeprom.c config/simplified_tuning.c
+  drivers/accgyro/accgyro_virtual.c drivers/accgyro/gyro_sync.c
+  drivers/barometer/barometer_virtual.c drivers/timer_common.c
+  drivers/motor.c drivers/bus.c drivers/dshot.c drivers/serial.c
+  drivers/buf_writer.c drivers/stack_check.c drivers/io.c drivers/display.c
+  drivers/light_led.c drivers/rx/rx_pwm.c drivers/pinio.c drivers/resource.c
+  drivers/bus_i2c_busdev.c drivers/bus_i2c_soft.c drivers/vtx_common.c
+  drivers/vtx_table.c drivers/pwm_output.c
+  fc/init.c
+  rx/rx.c rx/msp.c rx/msp_override.c rx/rc_stats.c
+  sensors/initialisation.c sensors/compass.c sensors/acceleration.c
+  sensors/acceleration_init.c sensors/gyro.c sensors/gyro_init.c
+  sensors/boardalignment.c sensors/barometer.c sensors/voltage.c
+  sensors/current.c sensors/adcinternal.c sensors/esc_sensor.c
+  fc/core.c fc/runtime_config.c fc/rc_controls.c fc/tasks.c fc/rc_modes.c
+  fc/controlrate_profile.c fc/rc.c fc/rc_adjustments.c fc/board_info.c
+  fc/stats.c fc/dispatch.c
+  flight/failsafe.c flight/mixer.c flight/mixer_init.c
+  flight/mixer_tricopter.c flight/servos.c flight/servos_tricopter.c
+  flight/imu.c flight/pid.c flight/pid_init.c flight/position.c
+  flight/gps_rescue_multirotor.c flight/autopilot_multirotor.c
+  io/beeper.c io/statusindicator.c io/rcdevice_cam.c io/rcdevice.c io/gps.c
+  io/displayport_msp.c io/serial_resource.c io/gps_virtual.c
+  cms/cms.c cms/cms_menu_blackbox.c cms/cms_menu_failsafe.c
+  cms/cms_menu_firmware.c cms/cms_menu_gps_rescue_multirotor.c
+  cms/cms_menu_imu.c cms/cms_menu_ledstrip.c cms/cms_menu_main.c
+  cms/cms_menu_misc.c cms/cms_menu_osd.c cms/cms_menu_persistent_stats.c
+  cms/cms_menu_power.c cms/cms_menu_saveexit.c cms/cms_menu_vtx_common.c
+  cms/cms_menu_vtx_msp.c cms/cms_menu_vtx_rtc6705.c
+  cms/cms_menu_vtx_smartaudio.c cms/cms_menu_vtx_tramp.c
+  osd/osd.c osd/osd_elements.c osd/osd_warnings.c
+  msp/msp.c msp/msp_box.c msp/msp_serial.c msp/msp_build_info.c
+  cli/cli.c
+  blackbox/blackbox.c blackbox/blackbox_encoding.c
+)
+list(TRANSFORM BF_MAIN_SOURCES PREPEND "${BF_DIR}/src/main/")
+file(GLOB BF_PG_SOURCES "${BF_DIR}/src/main/pg/*.c")
+file(GLOB BFEXT_SOURCES
+  "${BFEXT_DIR}/src/main/target/simITL/*.c"
+  "${BFEXT_DIR}/src/main/cli/*.c"
+  "${BFEXT_DIR}/src/main/common/*.c"
+  "${BFEXT_DIR}/src/main/io/*.c"
+  "${BFEXT_DIR}/src/main/scheduler/*.c"
+  "${BFEXT_DIR}/src/main/sensors/*.c"
+  "${BFEXT_DIR}/src/main/blackbox/*.c"
+)
+list(APPEND BFEXT_SOURCES
+  "${BFEXT_DIR}/src/main/drivers/pwm_output_fake.c"
+  "${BFEXT_DIR}/src/main/drivers/serial_ws.c"
+  "${BFEXT_DIR}/src/main/drivers/sound_beeper.c"
+  "${BF_DIR}/lib/main/dyad/dyad.c"
+  "${BF_DIR}/lib/main/google/olc/olc.c"
+)
+
+set(SIMITL_CPP_SOURCES
+  ${SIMITL_DIR}/src/main.cpp
+  ${SIMITL_DIR}/src/util/SimplexNoise.cpp
+  ${SIMITL_DIR}/src/sim/bf.cpp
+  ${SIMITL_DIR}/src/sim/physics.cpp
+  ${SIMITL_DIR}/src/sim/sim.cpp
+  ${PROJECT_SOURCE_DIR}/src/core/bf_bridge.c
+)
+
+add_library(simitl_core STATIC
+  ${BF_MAIN_SOURCES} ${BF_PG_SOURCES} ${BFEXT_SOURCES} ${SIMITL_CPP_SOURCES})
+
+target_compile_features(simitl_core PUBLIC cxx_std_17)
+target_compile_definitions(simitl_core PRIVATE
+  SITL SIMULATOR_BUILD=1 "__TARGET__=\"SimITL\"" "__REVISION__=\"libfpv\""
+  HSE_VALUE=8000000 FLASH_SIZE=2048 FMT_HEADER_ONLY=1)
+target_include_directories(simitl_core
+  PRIVATE
+    ${BFEXT_DIR}/src/main
+    ${BFEXT_DIR}/src/main/target/simITL
+    ${BF_DIR}/lib/main/dyad
+    ${BF_DIR}/src/main
+    ${BF_DIR}/src/platform/SIMULATOR/include
+    ${SIMITL_DIR}/extern
+    ${SIMITL_DIR}/src
+    ${SIMITL_DIR}/lib
+    ${FMT_DIR}/include
+  PUBLIC
+    ${SIMITL_DIR}/src)
+# Betaflight log output goes through libfpv's logger instead of stdout.
+target_compile_options(simitl_core PRIVATE
+  "$<$<COMPILE_LANGUAGE:C>:-include;${PROJECT_SOURCE_DIR}/src/core/bf_log_redirect.h>"
+  $<$<COMPILE_LANGUAGE:C>:-w>)
+if(MINGW)
+  target_compile_options(simitl_core PRIVATE $<$<COMPILE_LANGUAGE:C>:-mno-ms-bitfields>
+                                             $<$<COMPILE_LANGUAGE:CXX>:-Wa,-mbig-obj>)
+endif()
+set_target_properties(simitl_core PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  C_VISIBILITY_PRESET hidden
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN ON)
+target_link_libraries(simitl_core PRIVATE websockets)
+target_include_directories(simitl_core PRIVATE ${LWS_DIR}/include ${CMAKE_BINARY_DIR}/third_party/libwebsockets/include)
+
+# Betaflight's parameter-group registry lives in a dedicated linker section.
+# ELF and PE need the SITL linker script to emit the start/end symbols;
+# Mach-O gets them natively from section$start$/section$end$ (see pg.h).
+set(SIMITL_LINKER_SCRIPT ${BF_DIR}/src/platform/SIMULATOR/link/sitl.ld)
