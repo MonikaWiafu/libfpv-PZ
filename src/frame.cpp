@@ -148,10 +148,26 @@ extern "C" FPV_API fpv_result fpv_drone_tick(fpv_drone *d, float frameDt, fpv_fr
     Vec3 camPos = pos + rotate(rot, p.camera.offset);
     Vec3 camFwd = rotate(rot, {0, std::sin(tilt), std::cos(tilt)});
     Vec3 camUp = rotate(rot, {0, std::cos(tilt), -std::sin(tilt)});
+    float k1 = p.camera.k1, k2 = p.camera.k2, zoom = p.camera.zoom;
+    if (L.settings.cameraFisheye > 0) {
+        // Barrel lens filling the whole frame: the corners (r = 1) sample
+        // the corners of the rendered image, so there are no black borders.
+        float s = std::min(L.settings.cameraFisheye, 1.0f);
+        k1 = 0.55f * s;
+        k2 = 0.25f * s;
+        zoom = 1 + k1 + k2;
+        // The post-process shrinks the centre, so render wider: the top and
+        // bottom edges of the distorted image still show the chosen FOV.
+        float a = p.camera.aspect;
+        float rv2 = 1 / (1 + a * a);  // squared radius of the top edge centre
+        float edge = (1 + k1 * rv2 + k2 * rv2 * rv2) / zoom;
+        float t = std::tan(fov * kPi / 360.0f) / edge;
+        fov = std::min(std::atan(t) * 360.0f / kPi, 170.0f);
+    }
     makeCamera(f.camera, camPos, camFwd, camUp, fov, p.camera.aspect, 0.01f);
-    f.camera.distortion_k1 = p.camera.k1;
-    f.camera.distortion_k2 = p.camera.k2;
-    f.camera.distortion_zoom = p.camera.zoom;
+    f.camera.distortion_k1 = k1;
+    f.camera.distortion_k2 = k2;
+    f.camera.distortion_zoom = zoom;
 
     // Chase: behind along the heading, smoothed, pulled in front of walls.
     Vec3 heading = rotate(rot, {0, 0, 1});

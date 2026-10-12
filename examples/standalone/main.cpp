@@ -16,7 +16,8 @@
 //   6. audio: fpv_audio_read from the audio callback
 //   7. fpv_global_terminate on exit
 //
-// Keys: F8 overlay, V camera (FPV/chase/LOS), R respawn, Esc quit.
+// Keys: F8 overlay, V camera (FPV/chase/LOS), R respawn, F11 or Alt+Enter
+// fullscreen, Esc quit.
 // Verification flags: --autopilot (scripted flight), --screenshot out.ppm
 // --frames N (save the N-th frame and exit), --overlay (open it), --camera.
 //
@@ -276,10 +277,11 @@ in vec2 uv; uniform sampler2D scene; uniform vec2 k; uniform float zoom; uniform
 uniform float noise; uniform float breakup; uniform float time; uniform float analog; out vec4 o;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 void main() {
-  vec2 c = (uv - 0.5) * vec2(aspect, 1.0);
+  vec2 scale = vec2(aspect, 1.0) / (0.5 * sqrt(aspect * aspect + 1.0)); // r = 1 at the corners
+  vec2 c = (uv - 0.5) * scale;
   float r2 = dot(c, c);
   vec2 d = c * (1.0 + k.x * r2 + k.y * r2 * r2) / zoom;
-  vec2 suv = d / vec2(aspect, 1.0) + 0.5;
+  vec2 suv = d / scale + 0.5;
   if (breakup > 0.0) { // rolling tear lines
     float line = step(1.0 - breakup * 0.25, hash(vec2(floor(uv.y * 120.0), floor(time * 20.0))));
     suv.x += line * (hash(vec2(time, uv.y)) - 0.5) * 0.15;
@@ -470,6 +472,13 @@ int main(int argc, char **argv) {
             case SDL_EVENT_KEY_UP: {
                 int k = toFpvKey(e.key.key);
                 bool down = e.type == SDL_EVENT_KEY_DOWN;
+                // fullscreen toggle; Alt+Enter must not reach libfpv (Enter arms)
+                bool altEnter = (e.key.key == SDLK_RETURN || e.key.key == SDLK_KP_ENTER) && (e.key.mod & SDL_KMOD_ALT);
+                if (altEnter || e.key.key == SDLK_F11) {
+                    if (down && !e.key.repeat)
+                        SDL_SetWindowFullscreen(win, !(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN));
+                    break;
+                }
                 if (k != FPV_KEY_NONE && !e.key.repeat) fpv_input_key(k, down);
                 if (down && !fpv_overlay_wants_input()) {  // the game's own keys
                     if (e.key.key == SDLK_ESCAPE) running = false;

@@ -703,15 +703,20 @@ void Overlay::tabCamera() {
     float tilt = L.settings.cameraUptilt >= 0 ? L.settings.cameraUptilt : p.camera.uptiltDeg;
     float fov = L.settings.cameraFov > 0 ? L.settings.cameraFov : p.camera.fovYDeg;
     bool changed = ImGui::SliderFloat("Camera uptilt (deg)", &tilt, 0, 70, "%.0f");
+    bool done = ImGui::IsItemDeactivatedAfterEdit();
     changed |= ImGui::SliderFloat("Field of view (vertical, deg)", &fov, 60, 150, "%.0f");
+    done |= ImGui::IsItemDeactivatedAfterEdit();
     if (changed) {
         L.settings.cameraUptilt = tilt;
         L.settings.cameraFov = fov;
     }
-    if (ImGui::IsItemDeactivatedAfterEdit()) saveSettings();
+    ImGui::SliderFloat("Fisheye lens", &L.settings.cameraFisheye, 0, 1, L.settings.cameraFisheye > 0 ? "%.2f" : "off");
+    done |= ImGui::IsItemDeactivatedAfterEdit();
+    if (done) saveSettings();
     if (ImGui::Button("Use the drone's defaults")) {
         L.settings.cameraUptilt = -1;
         L.settings.cameraFov = -1;
+        L.settings.cameraFisheye = Settings{}.cameraFisheye;
         saveSettings();
     }
     sectionTitle("Sound");

@@ -323,8 +323,13 @@ typedef struct fpv_camera {
     float fov_y_degrees;    /* vertical field of view */
     float aspect_hint;      /* 4:3 analog, 16:9 HD; the host may ignore it */
     float near_plane;       /* host units */
-    /* Brown-Conrady radial distortion for the optional post-process
-     * (docs/INTEGRATION.md#lens-distortion). All zero = no distortion. */
+    /* Brown-Conrady radial distortion (the fisheye lens) for the optional
+     * post-process, see docs/INTEGRATION.md#lens-distortion. For each output
+     * pixel, with c its offset from the image centre scaled so |c| = 1 at the
+     * corners and r2 = dot(c, c), sample the rendered scene at
+     * c * (1 + k1 * r2 + k2 * r2 * r2) / zoom. k1 = k2 = 0 = no distortion.
+     * When the player enables the fisheye (F8 > Camera, on by default)
+     * fov_y_degrees is already widened to make up for the zoom. */
     float distortion_k1;
     float distortion_k2;
     float distortion_zoom;  /* scale applied after distortion, 1 = none */

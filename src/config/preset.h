@@ -12,10 +12,11 @@
 namespace fpv {
 
 struct CameraSettings {
-    float uptiltDeg = 30.0f;
+    float uptiltDeg = 25.0f;
     float fovYDeg = 100.0f;     // vertical
     float aspect = 4.0f / 3.0f;
-    float k1 = 0.0f, k2 = 0.0f; // Brown-Conrady radial distortion
+    float k1 = 0.0f, k2 = 0.0f; // Brown-Conrady radial distortion, r = 1 at the corners
+                                // (used when the player turns the fisheye slider off)
     float zoom = 1.0f;
     Vec3 offset{0.0f, 0.02f, 0.03f};  // from the centre of mass, metres
 };

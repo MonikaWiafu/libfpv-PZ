@@ -58,6 +58,7 @@ void loadSettings() {
         s.osdStyle = j.value("osdStyle", s.osdStyle);
         s.cameraUptilt = j.value("cameraUptilt", s.cameraUptilt);
         s.cameraFov = j.value("cameraFov", s.cameraFov);
+        s.cameraFisheye = std::clamp(j.value("cameraFisheye", s.cameraFisheye), 0.0f, 1.0f);
         s.chaseSmoothing = j.value("chaseSmoothing", s.chaseSmoothing);
     } catch (const std::exception &e) {
         FPV_LOGW("settings.json ignored: %s", e.what());
@@ -74,6 +75,7 @@ void saveSettings() {
               {"osdStyle", s.osdStyle},
               {"cameraUptilt", s.cameraUptilt},
               {"cameraFov", s.cameraFov},
+              {"cameraFisheye", s.cameraFisheye},
               {"chaseSmoothing", s.chaseSmoothing}};
     writeFileAtomic(pathFromUtf8(L.dataDir) / "settings.json", j.dump(2));
 }
