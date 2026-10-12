@@ -1,0 +1,8 @@
+add_executable(fpv_tests test_main.cpp)
+target_link_libraries(fpv_tests PRIVATE libfpv::fpv)
+target_compile_definitions(fpv_tests PRIVATE LIBFPV_TEST_DIFF_DIR="${CMAKE_CURRENT_SOURCE_DIR}/diffs")
+if(UNIX AND NOT APPLE)
+  target_link_libraries(fpv_tests PRIVATE dl)
+endif()
+add_test(NAME fpv_tests COMMAND fpv_tests WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(fpv_tests PROPERTIES TIMEOUT 900)

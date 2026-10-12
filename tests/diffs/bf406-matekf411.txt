@@ -1,0 +1,146 @@
+# diff all
+
+# version
+# Betaflight / MATEKF411 (MK41) 4.0.6 Sep  1 2019 / 00:50:01 (2a64051a2) MSP API: 1.41
+
+# start the command batch
+batch start
+
+# reset configuration to default settings
+defaults nosave
+
+board_name MATEKF411
+manufacturer_id 
+mcu_id 0032002e3437510133353431
+signature 
+
+# name
+
+# resources
+
+# timer
+
+# dma
+
+# mixer
+
+# servo
+
+# servo mix
+
+
+# feature
+feature -SOFTSERIAL
+feature -TELEMETRY
+feature -AIRMODE
+feature MOTOR_STOP
+feature RSSI_ADC
+
+# beeper
+
+# beacon
+
+# map
+
+# serial
+
+# led
+
+# color
+
+# mode_color
+
+# aux
+aux 0 0 0 1875 2100 0 0
+aux 1 1 2 900 1150 0 0
+aux 2 2 2 1300 1700 0 0
+aux 3 47 2 1900 2100 0 0
+
+# adjrange
+
+# rxrange
+
+# vtx
+
+# rxfail
+
+# display_name
+
+# master
+set acc_calibration = -67,17,133
+set baro_hardware = NONE
+set rssi_scale = 255
+set serialrx_provider = IBUS
+set motor_pwm_protocol = DSHOT600
+set bat_capacity = 300
+set vbat_max_cell_voltage = 440
+set vbat_min_cell_voltage = 290
+set vbat_warning_cell_voltage = 310
+set current_meter = VIRTUAL
+set ibatv_scale = 35
+set ibatv_offset = 40
+set yaw_motors_reversed = ON
+set osd_vbat_pos = 14700
+set osd_rssi_pos = 14423
+set osd_tim_2_pos = 14742
+set osd_flymode_pos = 14404
+set osd_throttle_pos = 14722
+set osd_crosshairs_pos = 14541
+set osd_ah_sbar_pos = 14542
+set osd_ah_pos = 14414
+set osd_current_pos = 14727
+set osd_mah_drawn_pos = 14735
+set osd_stat_max_spd = OFF
+set osd_stat_endbatt = ON
+set osd_stat_battery = ON
+set osd_stat_min_rssi = OFF
+set osd_stat_bbox = OFF
+set osd_stat_bb_no = OFF
+
+# profile
+profile 0
+
+
+# profile
+profile 1
+
+
+# profile
+profile 2
+
+
+# restore original profile selection
+profile 0
+
+# rateprofile
+rateprofile 0
+
+set roll_rc_rate = 50
+set pitch_rc_rate = 50
+set yaw_rc_rate = 50
+
+# rateprofile
+rateprofile 1
+
+
+# rateprofile
+rateprofile 2
+
+
+# rateprofile
+rateprofile 3
+
+
+# rateprofile
+rateprofile 4
+
+
+# rateprofile
+rateprofile 5
+
+
+# restore original rateprofile selection
+rateprofile 0
+
+# save configuration
+save

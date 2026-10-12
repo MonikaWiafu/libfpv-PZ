@@ -1,0 +1,64 @@
+diff --git a/extern/betaflightext/src/main/drivers/serial_ws.c b/extern/betaflightext/src/main/drivers/serial_ws.c
+--- a/extern/betaflightext/src/main/drivers/serial_ws.c
++++ b/extern/betaflightext/src/main/drivers/serial_ws.c
+@@ -23,6 +23,7 @@
+ #endif
+ 
+ static int wsBasePort = 5760;
++static bool wsEnabled = true;
+ #define BASE_PORT wsBasePort
+ 
+ static const struct serialPortVTable wsVTable;  // Forward
+@@ -210,7 +211,19 @@
+ };
+ 
+ 
++static void wsLogEmit(int level, const char *line)
++{
++  UNUSED(level);
++  fprintf(stderr, "[lws] %s", line);
++}
++
+ static wsPort_t *wsReconfigure(wsPort_t *s, int id) {
++  if (!wsEnabled) {
++    // remembered so wsRestart() can create the server once enabled
++    s->id = id;
++    wsPortOpened[id] = true;
++    return s;
++  }
+   if (wsPortInitialized[id]) {
+     fprintf(stderr, "port is already initialized!\n");
+     return s;
+@@ -223,7 +236,7 @@
+   struct lws_context_creation_info info;
+   struct lws_context *context;
+ 
+-  lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE, NULL);
++  lws_set_log_level(LLL_ERR | LLL_WARN, wsLogEmit);
+   memset(&info, 0, sizeof info); /* otherwise uninitialized garbage */
+ 	info.port = BASE_PORT + id + 1;
+ 	info.mounts = NULL;
+@@ -409,6 +422,11 @@
+   }
+ }
+ 
++void wsSetEnabled(int enabled)
++{
++  wsEnabled = enabled != 0;
++}
++
+ void wsSetBasePort(int basePort)
+ {
+   wsBasePort = basePort;
+diff --git a/extern/betaflightext/src/main/drivers/serial_ws.h b/extern/betaflightext/src/main/drivers/serial_ws.h
+--- a/extern/betaflightext/src/main/drivers/serial_ws.h
++++ b/extern/betaflightext/src/main/drivers/serial_ws.h
+@@ -66,6 +66,8 @@
+ // re-creates the contexts of ports closed by wsStop()
+ void wsRestart(void);
+ // port of UART1 is base + 1 (default base 5760 -> ws://localhost:5761)
++// disabled: no server is created (ports are remembered for wsRestart)
++void wsSetEnabled(int enabled);
+ void wsSetBasePort(int basePort);
+ int wsGetBasePort(void);
+ // number of connected configurator clients over all ports

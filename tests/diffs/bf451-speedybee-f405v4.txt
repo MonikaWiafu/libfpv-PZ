@@ -1,0 +1,58 @@
+# 
+
+# diff all
+
+# version
+# Betaflight / STM32F405 (S405) 4.5.1 Apr  5 2025 / 07:34:53 (77d01ba3b) MSP API: 1.46
+# config rev: 2f948c9
+
+# start the command batch
+batch start
+
+# reset configuration to default settings
+defaults nosave
+
+board_name SPEEDYBEEF405V4
+manufacturer_id SPBE
+mcu_id 003400463034511338323532
+signature 
+
+# feature
+feature LED_STRIP
+feature DISPLAY
+feature OSD
+feature ESC_SENSOR
+
+# serial
+serial 0 131073 115200 57600 0 115200
+
+# master
+set acc_calibration = 60,235,-41,1
+set sbus_baud_fast = ON
+set motor_pwm_protocol = DSHOT300
+
+profile 0
+
+profile 1
+
+profile 2
+
+profile 3
+
+# restore original profile selection
+profile 0
+
+rateprofile 0
+
+rateprofile 1
+
+rateprofile 2
+
+rateprofile 3
+
+# restore original rateprofile selection
+rateprofile 0
+
+# save configuration
+save
+# 

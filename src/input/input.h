@@ -1,0 +1,133 @@
+// libfpv - input manager: radios, gamepads, keyboard fallback and host
+// channels, mapped to Betaflight's AETR + AUX1..4.
+// SPDX-License-Identifier: GPL-3.0-or-later
+#pragma once
+
+#include <array>
+#include <atomic>
+#include <cstdint>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
+
+namespace fpv {
+
+enum class InputSource { None = 0, Radio = 1, Gamepad = 2, Keyboard = 3, Host = 4 };
+
+// Channel indices as Betaflight sees them (default map AETR1234).
+enum Channel { kRoll = 0, kPitch = 1, kThrottle = 2, kYaw = 3, kAux1 = 4, kAux2 = 5, kAux3 = 6, kAux4 = 7 };
+
+// Mapping of one raw device axis/button to a channel.
+struct ChannelBinding {
+    int axis = -1;          // raw axis index, -1 = none
+    bool inverted = false;
+    float min = -1, center = 0, max = 1;  // calibrated raw endpoints
+    // switches can also be bound to buttons: value = +1 while pressed
+    int button = -1;
+    // multi-position switch on an axis: raw thresholds are just the axis
+};
+
+struct DeviceMapping {
+    std::string guid;
+    std::string name;
+    std::array<ChannelBinding, 8> channels{};
+    bool complete = false;
+};
+
+// Raw state of one connected device, produced by the backend.
+struct RawDevice {
+    uint32_t instanceId = 0;
+    std::string guid;
+    std::string name;
+    bool isGamepad = false;   // recognised by SDL as a gamepad (fixed layout)
+    bool looksLikeRadio = false;
+    std::vector<float> axes;  // -1..1
+    std::vector<uint8_t> buttons;
+    // gamepad layout (when isGamepad): leftX, leftY, rightX, rightY, lt, rt
+    float pad[6] = {0, 0, 0, 0, 0, 0};
+    uint32_t padButtons = 0;  // bit per SDL_GamepadButton
+};
+
+class DeviceBackend {
+public:
+    virtual ~DeviceBackend() = default;
+    virtual bool init(std::string &error) = 0;
+    virtual void shutdown() = 0;
+    // Polls devices; called at the simulation rate on the simulation thread.
+    virtual void poll(std::vector<RawDevice> &devices) = 0;
+};
+
+std::unique_ptr<DeviceBackend> createSdlBackend();
+
+struct InputStatus {
+    InputSource source = InputSource::None;
+    std::string deviceName;
+    bool needsSetup = false;
+    int deviceCount = 0;
+};
+
+class InputManager {
+public:
+    InputManager();
+    ~InputManager();
+
+    void setDataDir(const std::string &dir);
+    bool startDevices(std::string &error);  // optional; without it only host/keyboard input
+    void stopDevices();
+
+    // --- called from any thread -----------------------------------------
+    void setHostChannels(const float *ch, uint32_t count, double wallTime);
+    void clearHostChannels();
+    void key(int key, bool down);
+    void setKeyboardEnabled(bool enabled) { m_keyboardEnabled = enabled; }
+
+    // --- simulation thread ----------------------------------------------
+    // Polls devices and produces Betaflight channels. `radioLost` is true
+    // when the active radio disappeared while it was the input source.
+    void update(double wallTime, float dt, float out[8], bool &radioLost);
+
+    // After the radio vanished, failsafe holds until Betaflight disarmed;
+    // then other sources (gamepad, keyboard) may take over.
+    void resetRadioLatch();
+
+    InputStatus status();
+    std::vector<RawDevice> devicesSnapshot();
+    // Mapping access for the setup wizard (any thread).
+    bool getMapping(const std::string &guid, DeviceMapping &out);
+    void setMapping(const DeviceMapping &m);  // persists to data dir
+    void forgetMapping(const std::string &guid);
+    // While the wizard is reading raw sticks, flight input is held at idle.
+    void setWizardActive(bool active) { m_wizardActive = active; }
+
+private:
+    void loadMappings();
+    void saveMappings();
+    bool mapRadio(const RawDevice &d, const DeviceMapping &m, float out[8]);
+    void mapGamepad(const RawDevice &d, float dt, float out[8]);
+    void mapKeyboard(float dt, float out[8]);
+
+    std::mutex m_mutex;
+    std::string m_dataDir;
+    std::unique_ptr<DeviceBackend> m_backend;
+    std::vector<RawDevice> m_devices;
+    std::vector<DeviceMapping> m_mappings;
+
+    float m_host[8] = {0, 0, -1, 0, -1, -1, -1, -1};
+    double m_hostTime = -1e9;
+    std::array<bool, 512> m_keys{};
+    std::atomic<bool> m_keyboardEnabled{true};
+    std::atomic<bool> m_wizardActive{false};
+
+    // fallback state
+    float m_kbThrottle = -1;
+    bool m_kbArmed = false, m_kbArmKeyPrev = false;
+    bool m_padArmed = false, m_padArmPrev = false;
+    float m_lastOut[8] = {0, 0, -1, 0, -1, -1, -1, -1};
+
+    InputStatus m_status;
+    std::string m_activeGuid;
+    bool m_radioWasActive = false;
+};
+
+}  // namespace fpv

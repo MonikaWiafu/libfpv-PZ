@@ -22,8 +22,11 @@
 #include "fc/rc_controls.h"
 #include "fc/runtime_config.h"
 #include "flight/failsafe.h"
+#include "flight/mixer.h"
 #include "io/beeper.h"
 #include "pg/pg.h"
+#include "config/config_eeprom.h"
+#include "drivers/system.h"
 
 #include "drivers/serial_ws.h"
 
@@ -215,6 +218,72 @@ bfbRates_t bfb_get_rates(void)
     }
     r.profileIndex = getCurrentControlRateProfileIndex();
     return r;
+}
+
+/* EEPROM_FILENAME and loadEEPROMFromFile() live in SimITL's target.c */
+extern char *EEPROM_FILENAME;
+extern bool loadEEPROMFromFile(void);
+
+int bfb_switch_eeprom(const char *path)
+{
+    if (isConfigDirty()) {
+        writeEEPROM();  /* keep the previous quad's pending changes */
+    }
+    FILE *probe = fopen(path, "rb");
+    int existed = probe != NULL;
+    if (probe) {
+        fclose(probe);
+    }
+    size_t n = strlen(path);
+    char *name = (char *)malloc(n + 1);
+    if (!name) {
+        return -1;
+    }
+    memcpy(name, path, n + 1);
+    EEPROM_FILENAME = name; /* previous buffer intentionally kept: SimITL owns it */
+
+    initEEPROM();
+    if (!existed) {
+        /* a new file was created from the previous quad's memory image */
+        resetEEPROM();
+    }
+    ensureEEPROMStructureIsValid();
+    if (!readEEPROM()) {
+        resetEEPROM();
+    }
+    return existed;
+}
+
+void bfb_reboot(void)
+{
+    systemReset();
+}
+
+int bfb_reboot_required(void)
+{
+    return (getArmingDisableFlags() & ARMING_DISABLED_REBOOT_REQUIRED) != 0;
+}
+
+void bfb_ws_set_enabled(int enabled)
+{
+    wsSetEnabled(enabled);
+}
+
+int bfb_yaw_motors_reversed(void)
+{
+    return mixerConfig()->yaw_motors_reversed ? 1 : 0;
+}
+
+int bfb_calibrating(void)
+{
+    return (getArmingDisableFlags() & ARMING_DISABLED_CALIBRATING) != 0;
+}
+
+int bfb_settling(void)
+{
+    return (getArmingDisableFlags() &
+            (ARMING_DISABLED_CALIBRATING | ARMING_DISABLED_RX_FAILSAFE | ARMING_DISABLED_BOOT_GRACE_TIME |
+             ARMING_DISABLED_FAILSAFE)) != 0;
 }
 
 void bfb_ws_set_base_port(int basePort)

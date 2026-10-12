@@ -1,0 +1,124 @@
+// libfpv - one drone: SimITL flight model + libfpv rigid body and collisions.
+// Runs on the simulation thread only. Internal frame: X right, Y up,
+// Z forward, metres (SimITL's frame).
+// SPDX-License-Identifier: GPL-3.0-or-later
+#pragma once
+
+#include <array>
+#include <cstdint>
+#include <string>
+#include <vector>
+
+#include "config/preset.h"
+#include "math.h"
+#include "network/packets.h"
+#include "world/collision.h"
+
+namespace fpv {
+
+struct ImpactEvent {
+    Vec3 point, normal;
+    float speed = 0;     // m/s, relative normal speed
+    float impulse = 0;   // N*s
+    uint8_t material = 0;
+    uint32_t objectId = 0;
+    int motorIndex = -1;
+};
+
+struct MotorSnapshot {
+    float rpm = 0, thrust = 0, current = 0, temperature = 0, command = 0, propDamage = 0;
+    uint32_t flags = 0;
+};
+
+// Everything the host-facing side needs, copied out after every step.
+struct FlightSnapshot {
+    double simTime = 0;
+    bool active = false;  // a drone exists
+    Vec3 pos, vel, angVel;
+    Quat rot;
+    std::array<MotorSnapshot, 4> motors{};
+    float batVoltage = 0, batVoltageSag = 0, batCurrent = 0, mahDrawn = 0;
+    bool armed = false, failsafe = false, beeper = false, onGround = false, crashed = false;
+    bool modeAngle = false, modeHorizon = false;
+    uint32_t armingDisableFlags = 0;
+    float altitude = -1;
+    float videoNoise = 0, videoBreakup = 0, videoSignal = 1;
+    std::array<uint8_t, 16 * 30> osd{};
+    uint32_t osdRevision = 0;
+    std::array<float, 8> channels{};
+};
+
+class Flight {
+public:
+    // One-time Betaflight initialisation (Betaflight cannot be torn down).
+    void initBetaflight(const std::string &eepromPath, const DronePreset &parkedPreset);
+    bool betaflightReady() const { return m_bfReady; }
+
+    void setWorld(CollisionWorld *world) { m_world = world; }
+
+    // Drone lifecycle. Without a drone, Betaflight keeps running "parked" so
+    // the Configurator and the overlay keep working.
+    void spawn(const DronePreset &preset, Vec3 pos, Quat rot, Vec3 pilotPos);
+    void despawn();
+    bool active() const { return m_active; }
+    void teleport(Vec3 pos, Quat rot);
+    void repair();
+    void applyPreset(const DronePreset &preset);
+    const DronePreset &preset() const { return m_preset; }
+
+    // One simulation step of dt seconds with Betaflight channel values
+    // (AETR + AUX1..4, -1..1). `radioLost` puts Betaflight into failsafe.
+    void step(float dt, const float channels[8], bool radioLost);
+
+    const FlightSnapshot &snapshot() const { return m_snap; }
+    // Impacts accumulated since the last call.
+    void takeImpacts(std::vector<ImpactEvent> &out);
+
+    double simTime() const { return m_simTime; }
+    Vec3 pilotPosition() const { return m_pilotPos; }
+    // Lowest point of the collision shape below the centre of mass (metres).
+    float restHeight() const;
+
+private:
+    struct Sphere {
+        Vec3 local;
+        float radius;
+        int motor;  // -1 body, 0..3 motor bell
+    };
+
+    void buildShape();
+    void syncPropDirection();
+    void resolveContacts(float dt);
+    void propStrikes(float dt);
+    void updateGroundEffect(float out[4]);
+    void updateVideo();
+    void recordImpact(const Contact &c, float speed, float impulse, int motor);
+    Mat3 worldInvInertia() const;
+
+    CollisionWorld *m_world = nullptr;
+    bool m_bfReady = false;
+    bool m_active = false;
+    DronePreset m_preset;
+    std::vector<Sphere> m_shape;
+
+    // authoritative rigid body state
+    Vec3 m_pos, m_vel, m_angVel;
+    Quat m_rot;
+    float m_propDamage[4] = {0, 0, 0, 0};
+    double m_simTime = 0;
+    double m_lastGroundContact = -1;
+    double m_lastMotorStrike[5] = {-1, -1, -1, -1, -1};
+    Vec3 m_pilotPos;
+
+    StateInput m_input{};
+    std::vector<Contact> m_contacts;
+    std::vector<ImpactEvent> m_impacts;
+    FlightSnapshot m_snap;
+    float m_mass = 0.5f;
+    Vec3 m_invInertiaBody{550, 310, 550};
+    uint32_t m_videoTick = 0;
+    int m_yawReversed = -1;
+    float m_videoOcclusion = 0;
+};
+
+}  // namespace fpv

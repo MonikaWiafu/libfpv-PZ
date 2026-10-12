@@ -1,0 +1,94 @@
+// libfpv - global library state shared by the C API implementation.
+// SPDX-License-Identifier: GPL-3.0-or-later
+#pragma once
+
+#include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
+
+#include "config/preset.h"
+#include "input/input.h"
+#include "libfpv.h"
+#include "math.h"
+#include "sim/flight.h"
+#include "sim/runner.h"
+#include "world/collision.h"
+
+struct fpv_drone {
+    uint32_t magic;
+};
+
+namespace fpv {
+
+class Overlay;
+class OsdRenderer;
+class AudioSynth;
+
+struct Settings {
+    std::string preset;          // file name of the selected preset
+    int overlayToggleKey = FPV_KEY_F8;
+    float audioVolume = 0.6f;
+    int osdStyle = FPV_OSD_STYLE_ANALOG;
+    // camera overrides (< 0 = use the preset's value)
+    float cameraUptilt = -1, cameraFov = -1;
+    bool chaseSmoothing = true;
+};
+
+struct Lib {
+    std::recursive_mutex mutex;  // serialises the public API
+    bool initialized = false;
+    bool everInitialized = false;
+    fpv_global_config config{};
+    std::string dataDir, presetDir, eepromDir;
+    CoordConverter conv;
+
+    CollisionWorld world;
+    Flight flight;
+    InputManager input;
+    Runner runner{flight, input};
+
+    std::vector<DronePreset> presets;
+    int presetIndex = 0;
+    Settings settings;
+
+    fpv_drone drone{0};
+    bool droneExists = false;
+
+    fpv_raycast_fn raycast = nullptr;
+    void *raycastUser = nullptr;
+
+    // presentation state (host thread)
+    Vec3 chasePos;
+    bool chaseValid = false;
+    std::vector<ImpactEvent> impactScratch;
+
+    // created lazily, never destroyed (see lib())
+    Overlay *overlay = nullptr;
+    OsdRenderer *osd = nullptr;
+    AudioSynth *audio = nullptr;
+
+    // last frame for the overlay/audio (host thread)
+    fpv_frame lastFrame{};
+    bool lastFrameValid = false;
+};
+
+Lib &lib();
+
+// Errors
+fpv_result setError(fpv_result r, const char *fmt, ...);
+void clearError();
+
+// Settings persistence (data dir/settings.json)
+void loadSettings();
+void saveSettings();
+
+// Preset handling, called with the API mutex held.
+const DronePreset &currentPreset();
+fpv_result selectPreset(const std::string &nameOrFile, bool applyToFlight);
+std::string eepromPathFor(const DronePreset &p);
+
+// Runs a CLI script on the simulation thread; returns BFB_CLI_* code.
+int runCli(const std::string &script, std::string &output);
+
+}  // namespace fpv

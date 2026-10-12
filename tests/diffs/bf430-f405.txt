@@ -1,0 +1,49 @@
+Entering CLI Mode, type 'exit' to return, or 'help'
+
+# diff all
+###WARNING: NO CUSTOM DEFAULTS FOUND###
+
+# version
+# Betaflight / STM32F405 (S405) 4.3.0 Jun 14 2022 / 00:47:24 (229ac66) MSP API: 1.44
+###ERROR IN diff: NO CONFIG FOUND###
+# start the command batch
+batch start
+
+# reset configuration to default settings
+defaults nosave
+
+mcu_id 004000304d33501620313833
+signature 
+
+# feature
+feature MOTOR_STOP
+
+# master
+set motor_pwm_protocol = DSHOT300
+
+profile 0
+
+profile 1
+
+profile 2
+
+# restore original profile selection
+profile 0
+
+rateprofile 0
+
+rateprofile 1
+
+rateprofile 2
+
+rateprofile 3
+
+rateprofile 4
+
+rateprofile 5
+
+# restore original rateprofile selection
+rateprofile 0
+
+# save configuration
+save

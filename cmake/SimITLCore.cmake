@@ -13,22 +13,27 @@ set(LWS_DIR         ${PROJECT_SOURCE_DIR}/third_party/libwebsockets)
 set(FMT_DIR         ${PROJECT_SOURCE_DIR}/third_party/fmt)
 
 # --- Patch series ------------------------------------------------------------
-# Patches in patches/<name>/ are applied in order to the matching submodule,
-# idempotently (a patch that already reverse-applies is skipped).
+# Patches in patches/<name>/ are applied in order to a clean submodule. A
+# submodule with local changes is assumed to carry the series already (or to
+# be under development with tools/new-patch.sh) and is left untouched.
 function(libfpv_apply_patches source_dir patch_dir)
   file(GLOB _patches "${patch_dir}/*.patch")
   list(SORT _patches)
+  if(NOT _patches)
+    return()
+  endif()
+  execute_process(COMMAND git diff --quiet WORKING_DIRECTORY "${source_dir}" RESULT_VARIABLE _dirty)
+  if(NOT _dirty EQUAL 0)
+    message(STATUS "libfpv: ${source_dir} has local changes, assuming its patch series is applied")
+    return()
+  endif()
   foreach(_patch IN LISTS _patches)
-    execute_process(COMMAND git apply --reverse --check --whitespace=nowarn "${_patch}"
-      WORKING_DIRECTORY "${source_dir}" RESULT_VARIABLE _already OUTPUT_QUIET ERROR_QUIET)
-    if(NOT _already EQUAL 0)
-      execute_process(COMMAND git apply --whitespace=nowarn "${_patch}"
-        WORKING_DIRECTORY "${source_dir}" RESULT_VARIABLE _res ERROR_VARIABLE _err)
-      if(NOT _res EQUAL 0)
-        message(FATAL_ERROR "libfpv: failed to apply ${_patch}:\n${_err}")
-      endif()
-      message(STATUS "libfpv: applied ${_patch}")
+    execute_process(COMMAND git apply --whitespace=nowarn "${_patch}"
+      WORKING_DIRECTORY "${source_dir}" RESULT_VARIABLE _res ERROR_VARIABLE _err)
+    if(NOT _res EQUAL 0)
+      message(FATAL_ERROR "libfpv: failed to apply ${_patch}:\n${_err}")
     endif()
+    message(STATUS "libfpv: applied ${_patch}")
   endforeach()
 endfunction()
 libfpv_apply_patches(${SIMITL_DIR} ${PROJECT_SOURCE_DIR}/patches/simitl)

@@ -1,0 +1,67 @@
+diff all
+
+# version
+# Betaflight / STM32F7X2 (S7X2) 4.2.8 Feb 15 2021 / 12:10:35 (101738d8e) MSP API: 1.43
+# config: manufacturer_id: TMTR, board_name: TMOTORF7, version: e02dd6f2, date: 2020-11-04T11:31:26Z
+
+# start the command batch
+batch start
+
+# reset configuration to default settings
+defaults nosave
+
+board_name TMOTORF7
+manufacturer_id TMTR
+mcu_id 003800463338510c39393832
+signature 
+
+# feature
+feature -RX_PARALLEL_PWM
+feature -AIRMODE
+feature RX_SERIAL
+feature TELEMETRY
+
+# beacon
+beacon RX_LOST
+beacon RX_SET
+
+# serial
+serial 0 64 115200 57600 0 115200
+serial 2 1 115200 57600 0 115200
+
+# master
+set serialrx_provider = SBUS
+set min_throttle = 1070
+set dshot_idle_value = 450
+set dshot_bidir = ON
+set use_unsynced_pwm = OFF
+set motor_pwm_protocol = DSHOT600
+set motor_pwm_rate = 480
+
+profile 0
+
+profile 1
+
+profile 2
+
+# restore original profile selection
+profile 0
+
+rateprofile 0
+
+rateprofile 1
+
+rateprofile 2
+
+rateprofile 3
+
+rateprofile 4
+
+rateprofile 5
+
+# restore original rateprofile selection
+rateprofile 0
+
+# save configuration
+save
+# 

@@ -99,3 +99,113 @@ Measured: a fresh EEPROM does not arm. There is no ARM mode, there is a 5 s
 power-on grace (`BOOTGRACE`), and gyro calibration (`CALIB`) takes about
 4 s of sim time. libfpv's defaults set `pwr_on_arm_grace = 0`, PWM, and
 `aux 0 0 0 1700 2100 0 0` (ARM on AUX1).
+
+### D6. Betaflight patches
+
+* `0001-cli-array-set-null-deref.patch`: `cliSet` parsed array settings
+  with `valPtr = strchr(valPtr, ',') + 1`. When a diff gives fewer values
+  than the array length (common in diffs from older firmware), this turns
+  NULL into `(char *)1` and the next iteration reads address 1.
+  Found by importing the 4.0.6 corpus diff under AddressSanitizer.
+
+### D7. One EEPROM per quad preset
+
+Each preset has its own Betaflight EEPROM at
+`<data_dir>/eeprom/<preset>.eeprom`, like one flight controller per real
+quad. Switching presets saves pending changes and then re-reads the other
+file (`initEEPROM` → `ensureEEPROMStructureIsValid` → `readEEPROM`). A
+missing file is first reset to Betaflight defaults, so it never inherits
+the previous quad's memory image. Then libfpv's first-run script and the
+preset's own tune (`<preset>.diff.txt` next to the JSON, if present) are
+applied. `diff all` imports go to the active preset's EEPROM.
+
+### D8. Props follow `yaw_motors_reversed`
+
+Measured: with SimITL's preset motor directions (−1, 1, 1, −1) and
+Betaflight's default "props in" mixer, the yaw loop has positive feedback.
+The drone spins up to 18 rad/s and runaway-takeoff prevention disarms it.
+SimITL's own tools work because pr0p's EEPROMs set
+`yaw_motors_reversed = ON`. libfpv does not force that setting, because an
+imported real "props in" diff would then spin the wrong way. Instead the
+simulated prop directions follow Betaflight's `yaw_motors_reversed`, read
+every 64 steps so Configurator edits apply live. It flies stably both ways
+(tested).
+
+### D9. Collision shape
+
+The collision shape is a sphere at the centre of mass plus one under each
+motor bell, with level bottoms. With only a body sphere the drone rested
+on a single point and ground friction could not stop yaw spin (measured:
+12.8 rad/s forever). Propeller discs are not collided with; they are tested
+separately for prop strikes, which damage the props (`durability` from the
+prop JSON). `FPV_MATERIAL_KILLS_PROPS` destroys them on contact.
+
+### D10. Warm-up, so a fresh drone can arm immediately
+
+Betaflight needs about 3.7 s of simulated time after boot for gyro, acc
+and baro calibration, and RX is suspended briefly whenever an EEPROM is
+read. `fpv_global_init`, EEPROM switches and the reboot after an import
+step the parked simulation until `CALIBRATING`, `RXLOSS`, `FAILSAFE` and
+`BOOTGRACE` clear. This costs about 40 ms of wall time.
+
+### D11. Timing model: dedicated simulation thread at 1 kHz
+
+Measured: one 1 ms SimITL step (8 Betaflight PID loops) costs about 10 µs
+on a desktop CPU, so a 1 kHz thread uses about 1 % of a core. Collision
+substeps keep every sphere moving less than half its radius, so a 30 m/s
+drone takes about 4 substeps per step.
+
+* `FPV_TIMING_THREAD` (default): a libfpv thread steps the simulation at
+  `sim_rate_hz` and polls the radio at the same rate. Pacing uses a
+  high-resolution waitable timer on Windows and `sleep_until` elsewhere. A
+  fixed-step accumulator gives frame-rate independence and is capped at
+  50 ms, so a host hitch cannot cause a spiral. Each step carries the wall
+  time it represents. `fpv_drone_tick` renders one step (1 ms) in the past
+  and interpolates (pos lerp, rot slerp), so there is no visible jitter at
+  any host frame rate and no extrapolation error.
+* `FPV_TIMING_MANUAL`: the host calls `fpv_step` itself. This is
+  deterministic and used by the tests and lockstep engines.
+* Auto-pause: when the host stops calling `fpv_drone_tick` for 0.5 s (a
+  pause menu, loading screen or debugger), the simulation stops, unless the
+  drone is disarmed on the ground. In that case Betaflight keeps running so
+  the Configurator stays responsive.
+* All Betaflight access (CLI, EEPROM, presets) is queued to the simulation
+  thread. The public API is serialised by one recursive mutex.
+
+The alternative, stepping inside the host's tick, would tie radio sampling
+and PID timing to the game's frame rate (16 ms at 60 FPS) and break the
+"radio polled at sim rate" requirement.
+
+### D12. libfpv does not retune SimITL's aerodynamics
+
+Measured with PropEater 5" (6S, 1900 kV): hover at 14 % throttle, and a
+vertical punch-out reaches about 275 km/h after 2 s (thrust-to-weight
+about 15:1 from the prop JSON). That is high but within what real 6S
+racing quads do, and the model is SimITL's by design. Tests check
+plausibility ranges, not exact values.
+
+### D13. `diff all` import rules
+
+* The import starts from `defaults nosave`, then applies the diff, clears
+  all 20 mode slots, applies libfpv's base settings, re-adds the modes and
+  saves without reboot. If Betaflight then reports
+  `REBOOT_REQUIRED`, libfpv reboots it in-process (Betaflight's own
+  `systemReset` → `init()`, the same path as the Configurator's
+  "Save and Reboot") and warms it up again.
+* Dropped as hardware-specific, each with its reason in the report:
+  resources, timers, DMA, serial ports, board identity, LED strip,
+  VTX/vtxtable, beacon, receiver settings, sensor hardware and
+  calibration, OSD chip, battery/current sensor scaling, and `map` and
+  `rxrange` (libfpv's radio wizard owns channel order and endpoints).
+* `profile`/`rateprofile` indices this Betaflight does not have (newer
+  firmware has 6 rate profiles, the embedded one has 4) are skipped
+  together with every `set` that follows them, so those settings cannot
+  land in the wrong profile.
+* ARM is moved to AUX1 with range 1700–2100, the wizard's "switch on". The
+  other mode channels are packed into AUX2–AUX4 in order of appearance. A
+  fifth distinct switch channel is dropped and reported.
+* Settings Betaflight rejects (renamed since older firmware) are listed
+  under "Rejected by Betaflight". They are not an error.
+* Corpus: six real diffs from Betaflight 4.0.6 to 4.5.1
+  (`tests/diffs/README.md`). Every one imports, arms and flies in the test
+  suite.

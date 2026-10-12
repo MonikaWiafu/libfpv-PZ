@@ -1,0 +1,61 @@
+diff all
+
+# version
+# Betaflight / STM32F405 (S405) 4.3.1 Jul 13 2022 / 03:32:11 (8d4f005) MSP API: 1.44
+# config: manufacturer_id: FPVM, board_name: BETAFLIGHTF4, version: f92ddc38, date: 2020-04-28T07:37:21Z
+
+# start the command batch
+batch start
+
+# reset configuration to default settings
+defaults nosave
+
+board_name BETAFLIGHTF4
+manufacturer_id FPVM
+mcu_id 004000253535510438353732
+signature 
+
+# master
+set dyn_notch_count = 1
+set dyn_notch_q = 500
+set acc_calibration = 13,-58,-113,1
+set dshot_bidir = ON
+set motor_pwm_protocol = DSHOT300
+set current_meter = ADC
+set battery_meter = ADC
+set pid_process_denom = 2
+
+profile 0
+
+# profile 0
+set auto_profile_cell_count = 4
+
+profile 1
+
+# profile 1
+set motor_output_limit = 66
+set auto_profile_cell_count = 6
+
+profile 2
+
+# restore original profile selection
+profile 1
+
+rateprofile 0
+
+rateprofile 1
+
+rateprofile 2
+
+rateprofile 3
+
+rateprofile 4
+
+rateprofile 5
+
+# restore original rateprofile selection
+rateprofile 0
+
+# save configuration
+save
+# 

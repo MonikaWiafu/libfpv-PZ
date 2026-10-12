@@ -1,0 +1,65 @@
+// libfpv - physical drone presets (frame, motor, propeller, battery, VTX,
+// camera). File format: SimITL's preset JSON, see docs/PRESETS.md.
+// SPDX-License-Identifier: GPL-3.0-or-later
+#pragma once
+
+#include <string>
+#include <vector>
+
+#include "math.h"
+#include "network/packets.h"
+
+namespace fpv {
+
+struct CameraSettings {
+    float uptiltDeg = 30.0f;
+    float fovYDeg = 100.0f;     // vertical
+    float aspect = 4.0f / 3.0f;
+    float k1 = 0.0f, k2 = 0.0f; // Brown-Conrady radial distortion
+    float zoom = 1.0f;
+    Vec3 offset{0.0f, 0.02f, 0.03f};  // from the centre of mass, metres
+};
+
+struct VtxSettings {
+    bool digital = false;
+    float noiseFloor = 0.014f;
+    float noiseFactor = 1.4f;
+    float rangeM = 1100.0f;
+};
+
+struct CollisionSettings {
+    float bodyRadius = 0.035f;   // sphere at the centre of mass
+    float motorRadius = 0.018f;  // sphere per motor bell
+    float propRadius = 0.065f;   // propeller disc radius
+    float propDurability = 11.0f;// relative-speed budget before a prop breaks
+};
+
+struct DronePreset {
+    std::string name;       // display name
+    std::string fileName;   // without extension
+    std::string description;
+    StateInit init{};       // SimITL physical parameters (eepromName left empty)
+    // runtime noise inputs from the preset
+    float gyroBaseNoiseAmp = 0, gyrobaseNoiseFreq = 0;
+    float frameHarmonic1Amp = 0, frameHarmonic1Freq = 0;
+    float frameHarmonic2Amp = 0, frameHarmonic2Freq = 0;
+    Vec3 motorImbalance{0, 0, 0};
+    float maxGroundEffectDist = 0.25f;
+    float soundMaxRpm = 30000.0f;
+    float propBladeCount = 3;
+    CameraSettings camera;
+    VtxSettings vtx;
+    CollisionSettings collision;
+    // Betaflight CLI tune applied when the player first uses this preset.
+    std::string betaflightDiff;
+};
+
+// Loads every quad preset in <dir>/quad, resolving component references in
+// the sibling folders. Errors are reported per file in `errors`.
+std::vector<DronePreset> loadPresetDirectory(const std::string &dir, std::vector<std::string> &errors);
+DronePreset loadPresetFile(const std::string &quadJsonPath);  // throws std::runtime_error
+
+// A conservative 5" freestyle quad used when no preset files are found.
+DronePreset builtinDefaultPreset();
+
+}  // namespace fpv
