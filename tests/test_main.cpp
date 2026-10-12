@@ -638,9 +638,14 @@ void testThreadedMode() {
     fpv_global_config cfg;
     fpv_global_config_defaults(&cfg);
     cfg.data_dir = g_dataDir.c_str();
-    cfg.flags = FPV_INIT_NO_DEVICE_INPUT | FPV_INIT_NO_CONFIGURATOR;
+    // real device input (SDL) and the Configurator server, as in a game
+    cfg.flags = 0;
+    cfg.configurator_port = 5799;
     cfg.log = logCb;
     CHECK(fpv_global_init(&cfg) == FPV_OK, "threaded init: %s", fpv_last_error());
+    fpv_input_status ist{};
+    ist.struct_size = sizeof(ist);
+    CHECK(fpv_input_get_status(&ist) == FPV_OK, "input status");
     Host h(cfg.coords);
     loadWorld(makeLevel(h, 100, 0));
     fpv_drone *d = nullptr;
