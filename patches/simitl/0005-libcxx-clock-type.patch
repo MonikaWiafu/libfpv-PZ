@@ -1,0 +1,12 @@
+diff --git a/src/sim/sim.cpp b/src/sim/sim.cpp
+--- a/src/sim/sim.cpp
++++ b/src/sim/sim.cpp
+@@ -30,7 +30,7 @@
+     }
+   }
+ 
+-  std::chrono::system_clock::time_point start;
++  hr_clock::time_point start;
+ 
+   void wsUpdateThread(Sim * sim){
+     while (sim->running) {

@@ -35,7 +35,8 @@ engine or mod loader.
 ## Building
 
 Requirements: CMake 3.24 or newer, a C11/C++17 compiler (GCC or Clang), and
-the usual X11/Wayland and audio development headers for SDL3 on Linux.
+the usual X11/Wayland and audio development headers for SDL3 on Linux. On
+macOS the Xcode command line tools are enough.
 
 ```sh
 git clone --recursive https://github.com/hammerill/libfpv.git
@@ -53,7 +54,7 @@ The default build type is `Release`. Outputs in the build directory:
 
 | File | What it is |
 |---|---|
-| `libfpv.so` (`libfpv.dll` + `libfpv.def` on Windows) | the library |
+| `libfpv.so` (`libfpv.dylib` on macOS, `libfpv.dll` + `libfpv.def` on Windows) | the library |
 | `examples/fpv_standalone` | a small SDL3 + OpenGL 3.3 game that uses every libfpv hook |
 | `examples/fpv_minimal` | the smallest headless integration |
 | `tests/fpv_tests` | the test suite |
@@ -80,6 +81,24 @@ cmake --build build/win -j
 
 MSVC hosts can make an import library with `lib /def:libfpv.def /machine:x64`
 or load the DLL with `LoadLibrary`.
+
+### macOS
+
+macOS builds natively with Apple Clang (tested on Apple Silicon):
+
+```sh
+cmake -S . -B build/mac
+cmake --build build/mac -j
+ctest --test-dir build/mac
+```
+
+Hidden symbols keep the embedded SDL3's C functions private, but
+Objective-C classes share one global namespace. If the game also links
+SDL3, the Objective-C runtime warns that classes such as `SDL3Window` are
+implemented twice, and which copy is used is undefined. `fpv_standalone`
+shows these warnings because it links its own SDL3 on purpose. To avoid the
+duplicate classes, build with `-DLIBFPV_WITH_SDL=OFF` and pass input in
+with `fpv_input_set_channels`.
 
 ### Sanitizers
 

@@ -10,7 +10,7 @@
 #include "config/preset.h"
 #include "input/input.h"
 #include "libfpv.h"
-#include "math.h"
+#include "fpv_math.h"
 #include "sim/flight.h"
 #include "sim/runner.h"
 #include "world/collision.h"

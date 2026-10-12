@@ -51,6 +51,11 @@ set(LWS_WITH_SHARED OFF CACHE BOOL "" FORCE)
 set(LWS_WITH_STATIC ON CACHE BOOL "" FORCE)
 set(LWS_WITH_EXPORT_LWSTARGETS OFF CACHE BOOL "" FORCE)
 set(DISABLE_WERROR ON CACHE BOOL "" FORCE)
+if(APPLE)
+  # lws's configure check accepts pipe2() on macOS, but the symbol resolves
+  # to NULL at run time and lws_create_context crashes; use plain pipe().
+  set(LWS_HAVE_PIPE2 "" CACHE INTERNAL "")
+endif()
 add_subdirectory(${LWS_DIR} ${CMAKE_BINARY_DIR}/third_party/libwebsockets EXCLUDE_FROM_ALL)
 set_property(TARGET websockets PROPERTY POSITION_INDEPENDENT_CODE ON)
 set_property(TARGET websockets PROPERTY C_VISIBILITY_PRESET hidden)
@@ -155,6 +160,12 @@ target_include_directories(simitl_core
 target_compile_options(simitl_core PRIVATE
   "$<$<COMPILE_LANGUAGE:C>:-include;${PROJECT_SOURCE_DIR}/src/core/bf_log_redirect.h>"
   $<$<COMPILE_LANGUAGE:C>:-w>)
+if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+  # Betaflight/SimITL C code relies on implicit declarations (target.c calls
+  # init()), which Clang 16+ rejects; GCC only warns.
+  target_compile_options(simitl_core PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:-Wno-error=implicit-function-declaration>)
+endif()
 if(MINGW)
   # Betaflight's structs use GCC bitfield layout; SimITL's C++ reads some of
   # them, so both languages must agree.

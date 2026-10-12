@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "config/preset.h"
-#include "math.h"
+#include "fpv_math.h"
 #include "network/packets.h"
 #include "world/collision.h"
 

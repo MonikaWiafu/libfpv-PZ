@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "math.h"
+#include "fpv_math.h"
 
 namespace fpv {
 

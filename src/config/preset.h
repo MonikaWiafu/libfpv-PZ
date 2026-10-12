@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "math.h"
+#include "fpv_math.h"
 #include "network/packets.h"
 
 namespace fpv {
