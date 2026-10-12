@@ -88,7 +88,9 @@ elseif(APPLE)
   target_link_options(fpv PRIVATE
     -Wl,-exported_symbols_list,${PROJECT_SOURCE_DIR}/cmake/libfpv.exp)
 elseif(WIN32)
-  target_link_options(fpv PRIVATE -T${SIMITL_LINKER_SCRIPT} -static-libgcc -static-libstdc++ -static)
+  # libfpv.def lets MSVC hosts make an import library: lib /def:libfpv.def /machine:x64
+  target_link_options(fpv PRIVATE -T${SIMITL_LINKER_SCRIPT} -static-libgcc -static-libstdc++ -static
+    -Wl,--output-def,${CMAKE_BINARY_DIR}/libfpv.def)
   target_link_libraries(fpv PRIVATE ws2_32 wsock32 winmm iphlpapi userenv)
 endif()
 

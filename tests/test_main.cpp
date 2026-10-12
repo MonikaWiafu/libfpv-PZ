@@ -765,6 +765,7 @@ struct Test {
 }  // namespace
 
 int main(int argc, char **argv) {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);  // keep output if a test crashes
     std::string filter = argc > 1 ? argv[1] : "";
     namespace fs = std::filesystem;
     g_dataDir = (fs::temp_directory_path() / ("libfpv-test-" + std::to_string((long long)std::time(nullptr)))).string();

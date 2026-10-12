@@ -265,3 +265,32 @@ SimITL's per-quad `.bin` EEPROMs load fine (version 178), but differ from
 defaults only in `feature -GPS -TELEMETRY`: there are no modes and no
 tune. So libfpv ships no per-preset tune. The `<preset>.diff.txt`
 mechanism (D7) is there for preset authors.
+
+## Platforms
+
+### D19. Windows: MinGW-w64 cross build, fully static runtimes
+
+`cmake/toolchains/mingw-w64-x86_64.cmake` uses the `-posix` GCC
+(winpthreads, needed for `std::thread`) and links libgcc, libstdc++ and
+winpthreads statically into every binary. Without that, executables need
+`libgcc_s_seh-1.dll`, `libstdc++-6.dll` and `libwinpthread-1.dll` and fail
+to start silently: found when `fpv_tests.exe` exited with code 53. Now
+`libfpv.dll` imports only Windows system DLLs. `libfpv.def` is emitted so
+MSVC hosts can build an import library with `lib /def:libfpv.def
+/machine:x64`. They can also `LoadLibrary` it, since the API is pure C.
+The full test suite passes on Windows 11 (run from WSL interop).
+
+SimITL's `string_light.c` re-implements libc's ctype and `strcasecmp`
+functions. With whole-archive linking (D20) these collide with msvcrt, so
+it is excluded on every platform and the platform libc is used. MinGW's
+missing `strcasestr` comes from `src/core/bf_compat.c`. Betaflight C files
+are compiled with `_GNU_SOURCE`, so `strcasestr` has a real prototype
+rather than an implicit `int` that would truncate the pointer. Betaflight's
+structs use GCC bitfield layout (`-mno-ms-bitfields`), applied to C and
+C++ alike inside the core.
+
+### D20. Whole-archive linking of the core
+
+Betaflight's parameter groups register themselves in a linker section that
+no code references by name. `simitl_core` is therefore linked with
+`$<LINK_LIBRARY:WHOLE_ARCHIVE,...>`, so no PG can be dropped by the linker.

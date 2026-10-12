@@ -109,7 +109,12 @@ file(GLOB BFEXT_SOURCES
   "${BFEXT_DIR}/src/main/sensors/*.c"
   "${BFEXT_DIR}/src/main/blackbox/*.c"
 )
+# SimITL's string_light.c re-implements libc's ctype/strcasecmp functions;
+# with every object linked that collides with msvcrt. The platform libc is
+# used instead, plus src/core/bf_compat.c for what MinGW lacks.
+list(FILTER BFEXT_SOURCES EXCLUDE REGEX "string_light\\.c$")
 list(APPEND BFEXT_SOURCES
+  "${PROJECT_SOURCE_DIR}/src/core/bf_compat.c"
   "${BFEXT_DIR}/src/main/drivers/pwm_output_fake.c"
   "${BFEXT_DIR}/src/main/drivers/serial_ws.c"
   "${BFEXT_DIR}/src/main/drivers/sound_beeper.c"
@@ -131,7 +136,7 @@ add_library(simitl_core STATIC
 
 target_compile_features(simitl_core PUBLIC cxx_std_17)
 target_compile_definitions(simitl_core PRIVATE
-  SITL SIMULATOR_BUILD=1 "__TARGET__=\"SimITL\"" "__REVISION__=\"libfpv\""
+  _GNU_SOURCE SITL SIMULATOR_BUILD=1 "__TARGET__=\"SimITL\"" "__REVISION__=\"libfpv\""
   HSE_VALUE=8000000 FLASH_SIZE=2048 FMT_HEADER_ONLY=1)
 target_include_directories(simitl_core
   PRIVATE
@@ -151,8 +156,9 @@ target_compile_options(simitl_core PRIVATE
   "$<$<COMPILE_LANGUAGE:C>:-include;${PROJECT_SOURCE_DIR}/src/core/bf_log_redirect.h>"
   $<$<COMPILE_LANGUAGE:C>:-w>)
 if(MINGW)
-  target_compile_options(simitl_core PRIVATE $<$<COMPILE_LANGUAGE:C>:-mno-ms-bitfields>
-                                             $<$<COMPILE_LANGUAGE:CXX>:-Wa,-mbig-obj>)
+  # Betaflight's structs use GCC bitfield layout; SimITL's C++ reads some of
+  # them, so both languages must agree.
+  target_compile_options(simitl_core PRIVATE -mno-ms-bitfields $<$<COMPILE_LANGUAGE:CXX>:-Wa,-mbig-obj>)
 endif()
 set_target_properties(simitl_core PROPERTIES
   POSITION_INDEPENDENT_CODE ON

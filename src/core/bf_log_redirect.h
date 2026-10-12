@@ -15,6 +15,11 @@ int libfpv_bf_fprintf(FILE *stream, const char *fmt, ...);
 }
 #endif
 
+#if defined(_WIN32)
+/* not in msvcrt; provided by src/core/bf_compat.c */
+char *strcasestr(const char *haystack, const char *needle);
+#endif
+
 /* Function-like macros so `__attribute__((format(printf, 1, 2)))` is untouched. */
 #define printf(...) libfpv_bf_printf(__VA_ARGS__)
 #define fprintf(...) libfpv_bf_fprintf(__VA_ARGS__)
