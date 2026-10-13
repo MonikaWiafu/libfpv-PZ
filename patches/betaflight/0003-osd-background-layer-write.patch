@@ -1,0 +1,26 @@
+diff --git a/src/main/osd/osd_elements.c b/src/main/osd/osd_elements.c
+--- a/src/main/osd/osd_elements.c
++++ b/src/main/osd/osd_elements.c
+@@ -2418,7 +2418,21 @@
+         displayLayerSelect(osdDisplayPort, DISPLAYPORT_LAYER_BACKGROUND);
+         displayClearScreen(osdDisplayPort, DISPLAY_CLEAR_WAIT);
+         for (unsigned i = 0; i < activeOsdElementCount; i++) {
+-            while (!osdDrawSingleElementBackground(osdDisplayPort, activeOsdElementArray[i]));
++            bool rendered;
++            do {
++                rendered = osdDrawSingleElementBackground(osdDisplayPort, activeOsdElementArray[i]);
++                // Write the static text into the background layer now; left
++                // pending it would land once on the foreground and then be
++                // overwritten by the next background-to-foreground copy.
++                if (displayPendingBackground) {
++                    osdDisplayWrite(&activeElement,
++                                    activeElement.elemPosX + activeElement.elemOffsetX,
++                                    activeElement.elemPosY + activeElement.elemOffsetY,
++                                    activeElement.attr, activeElement.buff);
++                    activeElement.buff[0] = '\0';
++                    displayPendingBackground = false;
++                }
++            } while (!rendered);
+         }
+         displayLayerSelect(osdDisplayPort, DISPLAYPORT_LAYER_FOREGROUND);
+     }
