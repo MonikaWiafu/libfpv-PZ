@@ -8,6 +8,10 @@ find_program(CMAKE_C_COMPILER NAMES ${TOOLCHAIN_PREFIX}-gcc-posix ${TOOLCHAIN_PR
 find_program(CMAKE_CXX_COMPILER NAMES ${TOOLCHAIN_PREFIX}-g++-posix ${TOOLCHAIN_PREFIX}-g++ REQUIRED)
 find_program(CMAKE_RC_COMPILER NAMES ${TOOLCHAIN_PREFIX}-windres)
 set(CMAKE_FIND_ROOT_PATH /usr/${TOOLCHAIN_PREFIX})
+
+# libfpv-PZ: declare strsep() for Betaflight's cli.c (see mingw-compat.h): without it the
+# implicit int declaration cuts the 64-bit pointer it returns to 32 bits.
+set(CMAKE_C_FLAGS_INIT "-include ${CMAKE_CURRENT_LIST_DIR}/mingw-compat.h")
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)

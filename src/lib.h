@@ -34,6 +34,8 @@ struct Settings {
     float cameraUptilt = -1, cameraFov = -1;
     float cameraFisheye = 0.5f;  // lens strength 0..1, 0 = off (the preset's own k1/k2)
     bool chaseSmoothing = true;
+    // chase camera (libfpv-PZ): metres behind the heading and above the drone
+    float chaseDistance = 1.3f, chaseHeight = 0.45f;
 };
 
 struct Lib {

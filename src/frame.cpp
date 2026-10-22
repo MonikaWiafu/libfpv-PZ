@@ -175,7 +175,7 @@ extern "C" FPV_API fpv_result fpv_drone_tick(fpv_drone *d, float frameDt, fpv_fr
     heading.y = 0;
     if (length2(heading) < 1e-4f) heading = rotate(rot, {0, 1, 0}) * -1.0f, heading.y = 0;
     heading = normalize(heading, {0, 0, 1});
-    Vec3 desired = pos - heading * 1.3f + Vec3{0, 0.45f, 0};
+    Vec3 desired = pos - heading * L.settings.chaseDistance + Vec3{0, L.settings.chaseHeight, 0};
     if (!L.chaseValid) {
         L.chasePos = desired;
         L.chaseValid = true;
@@ -191,7 +191,24 @@ extern "C" FPV_API fpv_result fpv_drone_tick(fpv_drone *d, float frameDt, fpv_fr
         Vec3 n;
         uint8_t m;
         uint32_t o;
-        if (dist > 1e-3f && L.world.raycast(pos, dir / dist, dist, cur.simTime, t, n, m, o)) chase = pos + dir / dist * std::max(0.05f, t - 0.1f);
+        if (dist > 1e-3f && L.world.raycast(pos, dir / dist, dist, cur.simTime, t, n, m, o)) {
+            chase = pos + dir / dist * std::max(0.05f, t - 0.1f);
+            dir = chase - pos;
+            dist = length(dir);
+        }
+        // libfpv-PZ: the host's world (raycast callback) too, so the chase camera stays in front of
+        // walls and roofs that exist only on the host side. Called on this (the tick) thread.
+        if (dist > 1e-3f && L.raycast) {
+            const CoordConverter &cv = L.conv;
+            float o3[3], d3[3];
+            put3(o3, cv.posToHost(pos));
+            put3(d3, cv.dirToHost(dir / dist));
+            fpv_raycast_hit hit{};
+            if (L.raycast(L.raycastUser, o3, d3, cv.lenToHost(dist), &hit)) {
+                float th = cv.lenToInternal(hit.distance);
+                if (th >= 0 && th < dist) chase = pos + dir / dist * std::max(0.05f, th - 0.1f);
+            }
+        }
     }
     makeCamera(f.chase_camera, chase, pos - chase, {0, 1, 0}, 75.0f, 16.0f / 9.0f, 0.05f);
     Vec3 eye = L.flight.pilotPosition() + Vec3{0, 1.6f, 0};
