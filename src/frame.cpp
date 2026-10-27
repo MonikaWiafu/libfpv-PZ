@@ -184,20 +184,24 @@ extern "C" FPV_API fpv_result fpv_drone_tick(fpv_drone *d, float frameDt, fpv_fr
     L.chasePos = lerp(L.chasePos, desired, k);
     Vec3 chase = L.chasePos;
     {
-        std::lock_guard<std::mutex> wl(L.world.mutex());
         Vec3 dir = chase - pos;
         float dist = length(dir);
-        float t;
-        Vec3 n;
-        uint8_t m;
-        uint32_t o;
-        if (dist > 1e-3f && L.world.raycast(pos, dir / dist, dist, cur.simTime, t, n, m, o)) {
-            chase = pos + dir / dist * std::max(0.05f, t - 0.1f);
-            dir = chase - pos;
-            dist = length(dir);
+        {
+            std::lock_guard<std::mutex> wl(L.world.mutex());
+            float t;
+            Vec3 n;
+            uint8_t m;
+            uint32_t o;
+            if (dist > 1e-3f && L.world.raycast(pos, dir / dist, dist, cur.simTime, t, n, m, o)) {
+                chase = pos + dir / dist * std::max(0.05f, t - 0.1f);
+                dir = chase - pos;
+                dist = length(dir);
+            }
         }
         // libfpv-PZ: the host's world (raycast callback) too, so the chase camera stays in front of
-        // walls and roofs that exist only on the host side. Called on this (the tick) thread.
+        // walls and roofs that exist only on the host side. Called on this (the tick) thread and
+        // OUTSIDE the world mutex (like refreshRaycastProxies): the 1 kHz physics step takes that
+        // mutex, and a host callback that calls back into libfpv must not deadlock.
         if (dist > 1e-3f && L.raycast) {
             const CoordConverter &cv = L.conv;
             float o3[3], d3[3];
